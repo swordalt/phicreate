@@ -10,7 +10,10 @@ import { useSettingsStore } from '@/features/settings/useSettingsStore';
 import { IMPORT_ACCEPT, importProjectFile } from '@/features/projects/importProjectFile';
 import { pickFile } from '@/lib/file';
 import { PhiraImportModal } from '@/features/projects/PhiraImportModal/PhiraImportModal';
-import { ImportConfirmModal } from '@/features/projects/ImportConfirmModal/ImportConfirmModal';
+import {
+  ImportConfirmModal,
+  type ImportOptions,
+} from '@/features/projects/ImportConfirmModal/ImportConfirmModal';
 import type { ImportResult, NewProjectInput } from '@/features/projects/types';
 import styles from './LandingPage.module.css';
 
@@ -52,10 +55,11 @@ export function LandingPage() {
     setPending(result);
   };
 
-  const confirmImport = async () => {
+  const confirmImport = async ({ noise }: ImportOptions) => {
     if (!pending) return;
     const { project, format } = pending;
     setPending(null);
+    if (format === 'rpe' && !noise) project.chart.noiseFields = [];
     await add(project);
     if (format !== 'phicreate') openProject(project.meta.id);
     else updateSettings({ lastProjectId: project.meta.id });

@@ -27,7 +27,7 @@ import type {
   TextObject,
 } from '../../model/types';
 import { BASE_DEFAULTS, LINE_COLOR, WHITE } from '../../runtime/scene';
-import { rpeToNoiseFields } from './noise';
+import { rpeNoiseAreas, rpeToNoiseFields } from './noise';
 import {
   rpeTexture,
   type RpeBeat,
@@ -68,7 +68,7 @@ export function beat(b: RpeBeat | undefined): Beat {
 }
 
 export function easing(e: RpeEvent<unknown>): Easing {
-  if (e.bezier === 1 && e.bezierPoints?.length === 4) {
+  if ((e.bezier === 1 || e.bezier === true) && e.bezierPoints?.length === 4) {
     return { kind: 'bezier', points: e.bezierPoints as [number, number, number, number] };
   }
   const id = Math.round(num(e.easingType, 1));
@@ -381,6 +381,6 @@ export function rpeToChart(
   chart.lines = lines;
   chart.texts = [...chart.texts, ...texts];
   chart.media = media;
-  chart.noiseFields = rpeToNoiseFields(rpe.blockAreaList);
+  chart.noiseFields = rpeToNoiseFields(rpeNoiseAreas(rpe));
   return withDefaults(chart);
 }

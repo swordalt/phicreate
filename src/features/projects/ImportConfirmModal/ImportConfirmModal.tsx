@@ -1,17 +1,26 @@
-import { Button, Modal } from '@/components/ui';
+import { useEffect, useState } from 'react';
+import { Button, Modal, Toggle } from '@/components/ui';
 import { FORMAT_LABELS, getChartStats } from '../chartStats';
 import type { ImportResult } from '../types';
 import styles from './ImportConfirmModal.module.css';
 
+export interface ImportOptions {
+  // Keep converted rpe-next noise fields.
+  noise: boolean;
+}
+
 interface ImportConfirmModalProps {
   result: ImportResult | null;
-  onConfirm: () => void;
+  onConfirm: (options: ImportOptions) => void;
   onCancel: () => void;
 }
 
 const yesNo = (v: boolean) => (v ? 'Yes' : 'No');
 
 export function ImportConfirmModal({ result, onConfirm, onCancel }: ImportConfirmModalProps) {
+  const [noise, setNoise] = useState(true);
+  useEffect(() => setNoise(true), [result]);
+  const hasNoise = result?.format === 'rpe' && result.project.chart.noiseFields.length > 0;
   const rows: [string, string | number][] = [];
   if (result) {
     const { project, format } = result;
@@ -49,7 +58,7 @@ export function ImportConfirmModal({ result, onConfirm, onCancel }: ImportConfir
           <Button variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onConfirm}>
+          <Button variant="primary" onClick={() => onConfirm({ noise })}>
             Import
           </Button>
         </>
@@ -63,6 +72,16 @@ export function ImportConfirmModal({ result, onConfirm, onCancel }: ImportConfir
           </div>
         ))}
       </dl>
+      {hasNoise && (
+        <div className={styles.options}>
+          <Toggle
+            label="Convert noise fields"
+            hint="RPE-Next block areas. Link groups and noise layers are dropped."
+            checked={noise}
+            onChange={setNoise}
+          />
+        </div>
+      )}
     </Modal>
   );
 }

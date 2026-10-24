@@ -10,7 +10,7 @@ export interface RpeEvent<T = number> {
   easingType?: number;
   easingLeft?: number;
   easingRight?: number;
-  bezier?: number;
+  bezier?: number | boolean;
   bezierPoints?: number[];
   linkgroup?: number;
 }
@@ -83,7 +83,13 @@ export interface RpeMeta {
 
 // rpe-next noise area (block area): RPE units and beats, segment events per axis.
 export interface RpeNoiseEvent extends RpeEvent {
+  // Rotate / scale pivot.
   anchor?: { x: number; y: number };
+  // Values the relative transform starts / ends from (default `start` / `end`).
+  transformStart?: number;
+  transformEnd?: number;
+  transformStep?: boolean;
+  inst?: number | boolean;
 }
 
 export interface RpeNoiseArea {
@@ -105,6 +111,7 @@ export interface RpeNoiseArea {
 export interface RpeChart {
   META?: RpeMeta;
   blockAreaList?: RpeNoiseArea[];
+  BlockAreaList?: RpeNoiseArea[];
   BPMList?: { bpm: number; startTime: RpeBeat }[];
   judgeLineGroup?: string[];
   judgeLineList: RpeJudgeLine[];

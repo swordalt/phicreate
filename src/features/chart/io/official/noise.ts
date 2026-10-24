@@ -3,15 +3,21 @@ import { cmp, fromFloat } from '../../model/beat';
 import { ease } from '../../model/easing';
 import { createLayer, createRangeEvent, NOISE_READY_FLASH } from '../../model/defaults';
 import type { Beat, Easing, NoiseField, NumEvent } from '../../model/types';
-import { FIT_EPS, fitEvents, type Segment } from '../fit';
+import {
+  apply,
+  compose,
+  IDENTITY,
+  pivotLayer,
+  relative,
+  type Affine,
+  type PivotKind,
+  type Point,
+} from '../pivot';
 import { toX, toY, type OfficialBlockArea, type OfficialPoint } from './types';
 
 // Semantics follow rpe-next's official import (src/core/official-noise.mjs, noise-areas.mjs).
 
 const SHRINK = 0.25;
-// Pivot compensation sample step, in beats.
-const STEP = 1 / 16;
-const BEFORE = 1e-7;
 
 const preset = (id: number): Easing => ({ kind: 'preset', id });
 const LINEAR = preset(1);
@@ -121,46 +127,13 @@ function toEvents(pieces: Piece[], held: number): NumEvent[] {
 // Each rotate / scale segment transforms the center about its outgoing anchor,
 // relative to its start value; segments accumulate. Moves add on top as offsets.
 
-type Affine = [number, number, number, number, number, number]; // x' = a x + c y + e, y' = b x + d y + f
-type Kind = 'scaleX' | 'scaleY' | 'rotate';
-
-const IDENTITY: Affine = [1, 0, 0, 1, 0, 0];
-const apply = (m: Affine, [x, y]: [number, number]): [number, number] => [
-  m[0] * x + m[2] * y + m[4],
-  m[1] * x + m[3] * y + m[5],
-];
-// `after` ∘ `before`.
-function compose(after: Affine, before: Affine): Affine {
-  const [e, f] = apply(after, [before[4], before[5]]);
-  return [
-    after[0] * before[0] + after[2] * before[1],
-    after[1] * before[0] + after[3] * before[1],
-    after[0] * before[2] + after[2] * before[3],
-    after[1] * before[2] + after[3] * before[3],
-    e,
-    f,
-  ];
-}
-
-// Transform taking the value from `from` to `to` about `anchor`. Rotation is clockwise.
-function relative(kind: Kind, from: number, to: number, [ax, ay]: [number, number]): Affine {
-  if (kind === 'rotate') {
-    const a = ((to - from) * Math.PI) / 180;
-    const cos = Math.cos(a);
-    const sin = Math.sin(a);
-    return [cos, -sin, sin, cos, ax * (1 - cos) - ay * sin, ay * (1 - cos) + ax * sin];
-  }
-  const r = from === 0 || !Number.isFinite(to / from) ? 1 : to / from;
-  return kind === 'scaleX' ? [r, 0, 0, 1, ax * (1 - r), 0] : [1, 0, 0, r, 0, ay * (1 - r)];
-}
-
 interface Chain {
-  kind: Kind;
+  kind: PivotKind;
   // Segment pieces carrying the transform span and anchor; `prefix` = all earlier ones.
-  steps: { piece: Piece; from: number; to: number; anchor: [number, number]; prefix: Affine }[];
+  steps: { piece: Piece; from: number; to: number; anchor: Point; prefix: Affine }[];
 }
 
-function chain(kind: Kind, frames: Frame[], center: [number, number]): Chain {
+function chain(kind: PivotKind, frames: Frame[], center: Point): Chain {
   const steps: Chain['steps'] = [];
   let prefix = IDENTITY;
   for (let i = 1; i < frames.length; i++) {
@@ -178,7 +151,7 @@ function chain(kind: Kind, frames: Frame[], center: [number, number]): Chain {
   return { kind, steps };
 }
 
-function chainAt({ kind, steps }: Chain, t: number, p: [number, number]): [number, number] {
+function chainAt({ kind, steps }: Chain, t: number, p: Point): Point {
   let k = -1;
   while (k + 1 < steps.length && steps[k + 1].piece.start <= t) k++;
   if (k < 0) return p;
@@ -187,42 +160,13 @@ function chainAt({ kind, steps }: Chain, t: number, p: [number, number]): [numbe
   return apply(relative(kind, from, value, anchor), apply(prefix, p));
 }
 
-// Layer moving the center to where anchored rotate / scale put it; null if not needed.
-function pivotLayer(chains: Chain[], center: [number, number]) {
-  const times = new Set<number>();
-  for (const { steps } of chains)
-    for (const { piece } of steps) times.add(piece.start).add(piece.end);
-  if (!times.size) return null;
-  const sorted = [...times].sort((a, b) => a - b);
-  const grid: number[] = [];
-  sorted.forEach((t, i) => {
-    grid.push(t);
-    const next = sorted[i + 1];
-    if (next !== undefined) for (let s = t + STEP; s < next; s += STEP) grid.push(s);
-  });
-  const offset = (t: number) => {
+function chainLayer(chains: Chain[], center: Point) {
+  const times = chains.flatMap(({ steps }) => steps.flatMap(({ piece }) => [piece.start, piece.end]));
+  return pivotLayer(times, (t) => {
     let p = center;
     for (const c of chains) p = chainAt(c, t, p);
     return [p[0] - center[0], p[1] - center[1]];
-  };
-  const segs: [Segment[], Segment[]] = [[], []];
-  let needed = false;
-  for (let i = 0; i < grid.length; i++) {
-    const t = grid[i];
-    const from = offset(t);
-    // Last sample holds; earlier ones run to just before the next sample (steps stay sharp).
-    const end = grid[i + 1] ?? t;
-    const to = i + 1 < grid.length ? offset(end - BEFORE) : from;
-    for (const axis of [0, 1]) {
-      segs[axis].push({ start: t, end, from: from[axis], to: to[axis] });
-      needed ||= Math.abs(from[axis]) > FIT_EPS.move;
-    }
-  }
-  if (!needed) return null;
-  const layer = createLayer('Layer 1');
-  layer.moveX = fitEvents(segs[0], FIT_EPS.move, 0);
-  layer.moveY = fitEvents(segs[1], FIT_EPS.move, 0);
-  return layer;
+  });
 }
 
 const point = (p: OfficialPoint | undefined): [number, number] | undefined =>
@@ -293,7 +237,7 @@ export function officialToNoiseFields(
     base.scaleY = toEvents(curve(f.scaleY), 1);
     const layers = [base];
     // Scale X, then Y, then rotation.
-    const pivots = pivotLayer(
+    const pivots = chainLayer(
       [
         chain('scaleX', f.scaleX, center),
         chain('scaleY', f.scaleY, center),

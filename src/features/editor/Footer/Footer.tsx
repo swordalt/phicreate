@@ -126,7 +126,7 @@ export function Footer() {
 
   return (
     <footer className={styles.footer}>
-      <span className={styles.brand}>PhiCreate v{__APP_VERSION__}</span>
+      <span className={styles.brand}>PhiCreate Beta</span>
       <Stat
         label="Notes breakdown"
         rows={[
