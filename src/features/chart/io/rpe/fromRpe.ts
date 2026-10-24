@@ -133,13 +133,14 @@ const color = (v: unknown): Color =>
 
 const sameColor = (a: Color, b: Color) => a.every((v, i) => v === b[i]);
 
-// Text, textured and UI lines default to white (rpe-next).
+// Text, textured and UI lines default to white (rpe-next). Other lines default to the
+// {color} variable, so a late first event is held explicitly instead of matching it.
 function colorEvents(line: RpeJudgeLine, at: BeatOf) {
   const white = !!line.attachUI || !!line.extended?.textEvents?.length || !!rpeTexture(line);
   return leadIn(
     events(line.extended?.colorEvents, color, at),
     white ? WHITE : LINE_COLOR,
-    sameColor,
+    white ? sameColor : () => false,
   );
 }
 

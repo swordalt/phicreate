@@ -90,6 +90,7 @@ export function PreviewCanvas() {
         backgroundBlur: settings.backgroundBlur,
         highlightSimultaneous: settings.highlightSimultaneous,
         highlightSelected: settings.highlightSelected,
+        judgeStatus: settings.judgeStatus,
         bearingMarker: settings.bearingMarker,
       });
     };

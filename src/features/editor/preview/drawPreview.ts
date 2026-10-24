@@ -9,6 +9,8 @@ import {
   sampleMedia,
   sampleNoiseFields,
   sampleTexts,
+  setJudgeStatus,
+  type JudgeStatus,
   type LineState,
   type NoteEntry,
 } from '@/features/chart/runtime/scene';
@@ -69,6 +71,8 @@ export interface PreviewOptions {
   highlightSimultaneous?: boolean;
   // Green selected line and selected noise field outline.
   highlightSelected?: boolean;
+  // Resolves the {color} default line color.
+  judgeStatus?: JudgeStatus;
   // Marks the selected object's origin and up direction.
   bearingMarker?: boolean;
   hideUI?: boolean;
@@ -144,6 +148,7 @@ export function drawPreview(
     backgroundBlur = true,
     highlightSimultaneous = true,
     highlightSelected = true,
+    judgeStatus = 'ap',
     bearingMarker = false,
     hideUI = false,
     hideText = false,
@@ -151,6 +156,7 @@ export function drawPreview(
     hideNoise = false,
   }: PreviewOptions,
 ) {
+  setJudgeStatus(judgeStatus);
   const vp = previewViewport(width, height, aspect, fov);
   const { scale, scaleX } = vp;
   beginMediaFrame();

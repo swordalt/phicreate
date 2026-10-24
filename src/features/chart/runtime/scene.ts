@@ -143,13 +143,28 @@ class SpeedTrack extends Track {
 export const LINE_COLOR: Color = [241, 216, 148];
 export const WHITE: Color = [255, 255, 255];
 
+export type JudgeStatus = 'ap' | 'fc' | 'none';
+
+export const JUDGE_COLORS: Record<JudgeStatus, Color> = {
+  ap: LINE_COLOR,
+  fc: [162, 238, 255],
+  none: WHITE,
+};
+
+// The {color} variable: the line default, following the AP/FC indicator.
+let judgeStatus: JudgeStatus = 'ap';
+export const setJudgeStatus = (status: JudgeStatus) => {
+  judgeStatus = status;
+};
+const variableColor = () => JUDGE_COLORS[judgeStatus];
+
 class ColorTrack {
   private segs: { start: number; end: number; event: ColorEvent }[];
 
   constructor(
     events: ColorEvent[],
     bpmList: BpmPoint[],
-    readonly fallback: Color,
+    private readonly defaultColor: Color | (() => Color),
   ) {
     this.segs = events
       .map((event) => ({
@@ -163,7 +178,7 @@ class ColorTrack {
   // Per-channel interpolation; same hold rules as Track.
   value(t: number): Color {
     const i = lastAtOrBefore(this.segs, t, (s) => s.start);
-    if (i < 0) return this.fallback;
+    if (i < 0) return typeof this.defaultColor === 'function' ? this.defaultColor() : this.defaultColor;
     const { start, end, event } = this.segs[i];
     if (t >= end) return event.to;
     const p = ease(event.easing, (t - start) / (end - start));
@@ -227,7 +242,7 @@ export class LineRuntime {
     bpmList: BpmPoint[],
   ) {
     this.tracks = buildTracks(line.layers, bpmList);
-    this.colors = new ColorTrack(line.color, bpmList, LINE_COLOR);
+    this.colors = new ColorTrack(line.color, bpmList, variableColor);
     this.speeds = line.layers.map((l, i) => new SpeedTrack(l.speed, bpmList, fallback('speed', i)));
     this.notes = line.notes.map((note) => {
       const start = beatToSeconds(bpmList, toFloat(note.beat));

@@ -18,7 +18,7 @@ import { clearAppData, exportAppData, importAppData } from '@/features/backup/ap
 import { useProjectStore } from '@/features/projects/useProjectStore';
 import { downloadBlob, pickFile } from '@/lib/file';
 import { useSettingsStore } from '../useSettingsStore';
-import type { HitEffects, Language, NoiseQuality, SelectMode, Settings, UiScale } from '../types';
+import type { HitEffects, JudgeStatus, Language, NoiseQuality, SelectMode, Settings, UiScale } from '../types';
 import styles from './SettingsModal.module.css';
 
 interface SettingsModalProps {
@@ -60,6 +60,12 @@ const HIT_OPTIONS: { value: HitEffects; label: string }[] = [
   { value: 'always', label: 'Always' },
   { value: 'preview', label: 'Preview only' },
   { value: 'never', label: 'Never' },
+];
+
+const JUDGE_OPTIONS: { value: JudgeStatus; label: string }[] = [
+  { value: 'ap', label: 'AP' },
+  { value: 'fc', label: 'FC' },
+  { value: 'none', label: 'None' },
 ];
 
 const percent = (v: number) => `${Math.round(v * 100)}%`;
@@ -257,6 +263,15 @@ function PreviewTab({ settings, update }: { settings: Settings; update: Update }
           hint="Tint the selected judge line green and outline the selected noise field."
           checked={settings.highlightSelected}
           onChange={(highlightSelected) => update({ highlightSelected })}
+        />
+      </Section>
+      <Section title="Color">
+        <Segmented
+          label="AP/FC indicator"
+          hint="Default color of judge lines without a color event."
+          value={settings.judgeStatus}
+          options={JUDGE_OPTIONS}
+          onChange={(judgeStatus) => update({ judgeStatus })}
         />
       </Section>
       <Section title="Effects">

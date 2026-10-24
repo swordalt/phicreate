@@ -5,6 +5,9 @@ export type NoiseQuality = 'simplified' | 'original';
 export type SelectMode = 'box' | 'line';
 export type HitEffects = 'always' | 'preview' | 'never';
 
+export type { JudgeStatus } from '@/features/chart/runtime/scene';
+import type { JudgeStatus } from '@/features/chart/runtime/scene';
+
 export interface Settings {
   // General
   language: Language;
@@ -24,6 +27,7 @@ export interface Settings {
   highlightSimultaneous: boolean;
   highlightSelected: boolean;
   hitEffects: HitEffects;
+  judgeStatus: JudgeStatus;
 
   lastProjectId: string | null;
 }
@@ -43,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highlightSimultaneous: true,
   highlightSelected: true,
   hitEffects: 'preview',
+  judgeStatus: 'ap',
   lastProjectId: null,
 };
 
