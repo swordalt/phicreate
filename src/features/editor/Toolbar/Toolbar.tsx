@@ -1,6 +1,13 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, DownloadIcon, FolderIcon, IconButton, SettingsIcon } from '@/components/ui';
+import {
+  Button,
+  DownloadIcon,
+  FolderIcon,
+  FullscreenIcon,
+  IconButton,
+  SettingsIcon,
+} from '@/components/ui';
 import { lineDescendants, patchOwner, setLineAnchor } from '@/features/chart/runtime/commands';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { LibraryModal } from '@/features/library/LibraryModal/LibraryModal';
@@ -12,6 +19,7 @@ import { parseNumber } from '@/lib/number';
 import { CommitInput } from '../CommitInput';
 import { useEditorStore } from '../useEditorStore';
 import { ASPECTS, MAX_DIVISION, MAX_FOV, MIN_FOV, PLAYBACK_RATES } from '../types';
+import { togglePreviewFullscreen } from '../preview/PreviewCanvas';
 import { NoteDefaultsModal } from './NoteDefaultsModal';
 import styles from './Toolbar.module.css';
 
@@ -296,6 +304,9 @@ function PlaybackSection() {
             onChange={(e) => set({ showNoise: e.target.checked })}
           />
         </Field>
+        <IconButton label="Fullscreen preview (F)" onClick={togglePreviewFullscreen}>
+          <FullscreenIcon />
+        </IconButton>
       </div>
     </section>
   );

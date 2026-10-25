@@ -24,6 +24,7 @@ export interface Settings {
   // Preview
   noiseQuality: NoiseQuality;
   backgroundBlur: boolean;
+  fullscreenAspect: boolean;
   highlightSimultaneous: boolean;
   highlightSelected: boolean;
   hitEffects: HitEffects;
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bearingMarker: false,
   noiseQuality: 'simplified',
   backgroundBlur: true,
+  fullscreenAspect: true,
   highlightSimultaneous: true,
   highlightSelected: true,
   hitEffects: 'preview',

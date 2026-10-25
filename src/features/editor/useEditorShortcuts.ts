@@ -5,6 +5,7 @@ import { copySelection, pasteClipboard } from './clipboard';
 import { useEditorStore } from './useEditorStore';
 import { beatToMusicTime, musicTimeToBeat } from './time';
 import { ownerEvents } from './events';
+import { togglePreviewFullscreen } from './preview/PreviewCanvas';
 import { currentLine, currentTarget } from './grid/useGridCanvas';
 
 // Checkboxes don't take typed input, so shortcuts still fire while one is focused.
@@ -20,6 +21,14 @@ export function useEditorShortcuts() {
       const charts = useChartStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+
+      // Fullscreen preview only keeps play/pause, stepping and the fullscreen toggle.
+      if (
+        document.fullscreenElement &&
+        !['f', 'arrowup', 'arrowdown'].includes(key) &&
+        e.code !== 'Space'
+      )
+        return;
 
       if (mod && key === 'z') {
         e.preventDefault();
@@ -84,6 +93,8 @@ export function useEditorShortcuts() {
         editor.seek(beatToMusicTime(chart, snapped));
       } else if (key === 'i') {
         editor.set({ mode: 'preview' });
+      } else if (key === 'f') {
+        togglePreviewFullscreen();
       } else if (key === 'p') {
         editor.set({ mode: 'edit' });
       } else if (key === 'escape') {

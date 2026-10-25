@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Chart } from '@/features/chart/model/types';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
@@ -27,15 +27,25 @@ function hiddenLines(chart: Chart) {
   return set;
 }
 
+let previewWrap: HTMLElement | null = null;
+
+export function togglePreviewFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen();
+  else void previewWrap?.requestFullscreen().catch(() => {});
+}
+
 // Gameplay preview; renders every frame from the stores.
 export function PreviewCanvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [toast, setToast] = useState(false);
 
   useEffect(() => {
     void loadSkin();
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
+    previewWrap = wrap;
     const ctx = canvas.getContext('2d')!;
     let size = { w: 0, h: 0, dpr: 1 };
 
@@ -102,17 +112,51 @@ export function PreviewCanvas() {
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
+    // Fit the aspect ratio to the screen while fullscreen, restoring it after.
+    let savedAspect: number | null = null;
+    const restoreAspect = () => {
+      if (savedAspect === null) return;
+      useEditorStore.getState().set({ aspect: savedAspect });
+      savedAspect = null;
+    };
+    const onFullscreen = () => {
+      setFullscreen(document.fullscreenElement === wrap);
+      if (document.fullscreenElement === wrap) {
+        if (!useSettingsStore.getState().settings.fullscreenAspect) return;
+        savedAspect = useEditorStore.getState().aspect;
+        useEditorStore.getState().set({ aspect: screen.width / screen.height });
+      } else restoreAspect();
+    };
+    document.addEventListener('fullscreenchange', onFullscreen);
+
     return () => {
+      document.removeEventListener('fullscreenchange', onFullscreen);
+      restoreAspect();
       cancelAnimationFrame(raf);
+      if (document.fullscreenElement === wrap) void document.exitFullscreen();
+      if (previewWrap === wrap) previewWrap = null;
       pauseAllMedia();
       ro.disconnect();
       canvas.removeEventListener('wheel', onWheel);
     };
   }, []);
 
+  useEffect(() => {
+    if (!fullscreen) return setToast(false);
+    setToast(true);
+    const id = setTimeout(() => setToast(false), 2500);
+    return () => clearTimeout(id);
+  }, [fullscreen]);
+
   return (
     <div ref={wrapRef} className={styles.wrap}>
       <canvas ref={canvasRef} className={styles.canvas} />
+      {fullscreen && (
+        <>
+          {toast && <div className={styles.toast}>Fullscreen preview enabled</div>}
+          <div className={styles.badge}>PhiCreate Beta</div>
+        </>
+      )}
     </div>
   );
 }

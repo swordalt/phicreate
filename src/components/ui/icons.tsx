@@ -132,3 +132,9 @@ export const UploadIcon = (p: IconProps) => (
     <path d="M12 20V8M7 13l5-5 5 5M5 4h14" />
   </svg>
 );
+
+export const FullscreenIcon = (p: IconProps) => (
+  <svg {...base} {...p}>
+    <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+  </svg>
+);

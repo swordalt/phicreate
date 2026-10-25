@@ -253,6 +253,12 @@ function PreviewTab({ settings, update }: { settings: Settings; update: Update }
           onChange={(backgroundBlur) => update({ backgroundBlur })}
         />
         <Toggle
+          label="Match screen aspect in fullscreen"
+          hint="Change the aspect ratio to fit the screen in fullscreen preview, then restore it."
+          checked={settings.fullscreenAspect}
+          onChange={(fullscreenAspect) => update({ fullscreenAspect })}
+        />
+        <Toggle
           label="Highlight simultaneous notes"
           hint="Use highlight textures for notes that share a hit time."
           checked={settings.highlightSimultaneous}
