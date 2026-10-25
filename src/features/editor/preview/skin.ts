@@ -55,6 +55,34 @@ export const holdImages = (highlight: boolean) => ({
   head: images.get(highlight ? 'HoldHeadHL' : 'HoldHead'),
 });
 
+const runs = new Map<string, [number, number][]>();
+
+// Column ranges [start, end) where a texture row is fully opaque (cached).
+export function opaqueRuns(img: HTMLImageElement, row: number) {
+  const key = `${img.src}:${row}`;
+  let result = runs.get(key);
+  if (!result) {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, -row);
+    const data = ctx.getImageData(0, 0, canvas.width, 1).data;
+    result = [];
+    let start = -1;
+    for (let x = 0; x <= canvas.width; x++) {
+      const opaque = x < canvas.width && data[x * 4 + 3] >= 250;
+      if (opaque && start < 0) start = x;
+      else if (!opaque && start >= 0) {
+        result.push([start, x]);
+        start = -1;
+      }
+    }
+    runs.set(key, result);
+  }
+  return result;
+}
+
 // Multiplies a texture by a color (cached).
 export function tinted(name: string, [r, g, b]: [number, number, number]) {
   const img = images.get(name);

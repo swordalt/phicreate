@@ -31,6 +31,7 @@ import {
   HIT_FRAME_SECONDS,
   HIT_FRAMES,
   holdImages,
+  opaqueRuns,
   tinted,
 } from './skin';
 
@@ -45,6 +46,7 @@ const HIT_COLOR: [number, number, number] = [255, 236, 160];
 const HIT_SIZE = NOTE_WIDTH * 1.4;
 const HIT_LIFETIME = Math.max(HIT_DURATION, 2 / 3);
 const HOLD_HIT_INTERVAL = 20 / 120;
+const HOLD_SEAM_OVERLAP = 1.5;
 const BACKGROUND_ALPHA = 0.35;
 const BAR_ALPHA = 0.55;
 const FALLBACK_COLORS = { tap: '#0ac3ff', drag: '#f0ed69', flick: '#fe4365', hold: '#0ac3ff' };
@@ -551,13 +553,49 @@ function drawHold(
   if (end) {
     const w = end.naturalWidth * unit;
     const h = end.naturalHeight * unit;
+    drawSeam(ctx, body, end, end.naturalHeight - 1, 0, unit, -length);
     ctx.drawImage(end, -w / 2, -length - h, w, h);
   }
   if (showHead && headImg) {
     const w = headImg.naturalWidth * unit;
+    drawSeam(ctx, body, headImg, 0, body.naturalHeight - 1, unit, 0);
     ctx.drawImage(headImg, -w / 2, 0, w, headImg.naturalHeight * unit);
   }
   ctx.restore();
+}
+
+// Bridges the body/cap junction at `y` where both edges are opaque, hiding anti-aliasing seams.
+function drawSeam(
+  ctx: CanvasRenderingContext2D,
+  body: HTMLImageElement,
+  cap: HTMLImageElement,
+  capRow: number,
+  bodyRow: number,
+  unit: number,
+  y: number,
+) {
+  const offset = (body.naturalWidth - cap.naturalWidth) / 2;
+  const inset = 0.5 / unit;
+  const bodyRuns = opaqueRuns(body, bodyRow);
+  for (const [ca, cb] of opaqueRuns(cap, capRow)) {
+    for (const [ba, bb] of bodyRuns) {
+      const a = Math.max(ca + offset, ba) + inset;
+      const b = Math.min(cb + offset, bb) - inset;
+      if (b <= a) continue;
+      const x = (a - body.naturalWidth / 2) * unit;
+      ctx.drawImage(
+        body,
+        a,
+        bodyRow,
+        b - a,
+        1,
+        x,
+        y - HOLD_SEAM_OVERLAP,
+        (b - a) * unit,
+        HOLD_SEAM_OVERLAP * 2,
+      );
+    }
+  }
 }
 
 function drawHit(
