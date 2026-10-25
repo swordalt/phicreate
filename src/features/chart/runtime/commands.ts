@@ -380,8 +380,9 @@ function editEvents(
   if (isNoise(owner)) {
     const visible = edit(owner.visible, 'visible');
     const active = edit(owner.active, 'active');
+    const color = edit(owner.color, 'color');
     if (!changed || invalid) return chart;
-    return mapNoise(chart, ownerId, (f) => ({ ...f, layers, visible, active }));
+    return mapNoise(chart, ownerId, (f) => ({ ...f, layers, visible, active, color }));
   }
   const next = { ...owner, layers, color: edit(owner.color, 'color') };
   if (isText(owner)) {

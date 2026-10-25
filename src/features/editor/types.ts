@@ -42,7 +42,7 @@ export const NOISE_COLUMNS: EventColumn[] = [
   { channel: 'visible', label: 'Visible', color: '#e6e6e6' },
   { channel: 'active', label: 'Active', color: '#ff5454' },
   ...EVENT_COLUMNS.filter((c) =>
-    ['moveX', 'moveY', 'rotate', 'scaleX', 'scaleY'].includes(c.channel),
+    ['moveX', 'moveY', 'rotate', 'scaleX', 'scaleY', 'color'].includes(c.channel),
   ),
 ];
 

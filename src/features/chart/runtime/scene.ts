@@ -142,6 +142,8 @@ class SpeedTrack extends Track {
 // Default colors when no color event applies (RPE).
 export const LINE_COLOR: Color = [241, 216, 148];
 export const WHITE: Color = [255, 255, 255];
+// Noise field tint (rpe-next / Phira default).
+export const NOISE_COLOR: Color = [255, 84, 84];
 
 export type JudgeStatus = 'ap' | 'fc' | 'none';
 
@@ -640,6 +642,7 @@ export interface NoiseState {
   phase: NoisePhase | null;
   // 0 = disabled look, 1 = active look (flashes while ready).
   mix: number;
+  color: Color;
 }
 
 // Ready flash: 3 pulses (rpe-next).
@@ -649,6 +652,7 @@ export class NoiseRuntime {
   private tracks: Record<ValueChannel, Track[]>;
   private visible: { start: number; end: number }[];
   private active: { start: number; end: number; flash: number }[];
+  private colors: ColorTrack;
 
   constructor(
     readonly field: NoiseField,
@@ -656,6 +660,7 @@ export class NoiseRuntime {
   ) {
     const sec = (b: NumEvent['start']) => beatToSeconds(bpmList, toFloat(b));
     this.tracks = buildTracks(field.layers, bpmList, field.defaults);
+    this.colors = new ColorTrack(field.color ?? [], bpmList, NOISE_COLOR);
     this.visible = field.visible
       .map((e) => ({ start: sec(e.start), end: sec(e.end) }))
       .sort((a, b) => a.start - b.start);
@@ -666,6 +671,10 @@ export class NoiseRuntime {
 
   layerValue(layerIndex: number, channel: Channel, t: number) {
     return channel === 'speed' ? 0 : (this.tracks[channel][layerIndex]?.value(t) ?? 0);
+  }
+
+  colorAt(t: number) {
+    return this.colors.value(t);
   }
 
   isShown(t: number) {
@@ -692,6 +701,7 @@ export class NoiseRuntime {
       rotation: sumTracks(this.tracks, 'rotate', t),
       scaleX: sumTracks(this.tracks, 'scaleX', t),
       scaleY: sumTracks(this.tracks, 'scaleY', t),
+      color: this.colors.value(t),
       ...this.phaseAt(t),
     };
   }

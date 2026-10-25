@@ -22,11 +22,13 @@ import type {
   Id,
   JudgeLine,
   MediaObject,
+  NoiseField,
   Note,
   NoteType,
   TextObject,
 } from '../../model/types';
-import { BASE_DEFAULTS, LINE_COLOR, WHITE } from '../../runtime/scene';
+import { BASE_DEFAULTS, LINE_COLOR, NOISE_COLOR, WHITE } from '../../runtime/scene';
+import { MARKER_SIZE, markerKind, markerToNoise } from './markers';
 import { rpeNoiseAreas, rpeToNoiseFields } from './noise';
 import {
   rpeTexture,
@@ -216,13 +218,36 @@ function textureMedia(l: RpeJudgeLine, name: string, texture: string, assetId: I
 const withIds = <T>(list: Event<T>[], value = (v: T) => v) =>
   list.map((e) => ({ ...e, id: createId(), from: value(e.from), to: value(e.to) }));
 
+export interface RpeImportOptions {
+  // Convert rpe-next block areas and isSubtract marker lines to noise fields (default on).
+  // Off: block areas are dropped and markers stay textured lines.
+  noise?: boolean;
+  // Marker texture sizes in pixels by file name.
+  markerSizes?: Record<string, [number, number]>;
+}
+
+// Last event or note end, in float beats.
+function lastBeat(src: RpeJudgeLine[]) {
+  let last = 0;
+  for (const l of src) {
+    for (const layer of l.eventLayers ?? []) {
+      for (const list of Object.values(layer ?? {})) {
+        for (const e of list ?? []) last = Math.max(last, toFloat(beat(e.endTime)));
+      }
+    }
+    for (const n of l.notes ?? []) last = Math.max(last, toFloat(beat(n.endTime)));
+  }
+  return last;
+}
+
 // Converts an RPE chart. `textures` maps texture file names to media asset ids.
 // Lossy: controls and GIF progress are dropped.
-// `ids` = line ids by RPE index (lines turned into text or media don't use theirs).
+// `ids` = line ids by RPE index (lines turned into text, media or noise don't use theirs).
 export function rpeToChart(
   rpe: RpeChart,
   textures: Record<string, Id> = {},
   ids: Id[] = rpe.judgeLineList.map(() => createId()),
+  { noise = true, markerSizes = {} }: RpeImportOptions = {},
 ): Chart {
   const chart = createChart(120, 0);
   chart.offsetMs = num(rpe.META?.offset, 0);
@@ -267,11 +292,49 @@ export function rpeToChart(
   const lines: JudgeLine[] = [];
   const texts: TextObject[] = [];
   const media: MediaObject[] = [];
+  const markers: NoiseField[] = [];
+  const last = noise ? lastBeat(src) : 0;
 
   src.forEach((l, i) => {
     const name = l.Name && l.Name !== 'Untitled' ? l.Name : `Line ${i}`;
     const at = beatOf(l);
     let lineLayers = layers(l, at, version < 170);
+
+    // Noise markers: the line's pose and color drive a noise field; speed codes time it.
+    const subtract = noise ? markerKind(l.Texture) : null;
+    if (subtract !== null) {
+      const keep = !!l.notes?.length || hasChildren.has(i);
+      markers.push(
+        markerToNoise({
+          name,
+          subtract,
+          size: markerSizes[l.Texture!] ?? MARKER_SIZE,
+          anchor: l.anchor ?? [0.5, 0.5],
+          // A kept line carries the pose; the field follows it and takes over scale.
+          layers: keep
+            ? lineLayers.map((y) => ({
+                ...createLayer(y.name),
+                scaleX: withIds(y.scaleX),
+                scaleY: withIds(y.scaleY),
+              }))
+            : lineLayers,
+          alphaLayers: lineLayers,
+          codes: (l.eventLayers ?? [])
+            .flatMap((y) => y?.speedEvents ?? [])
+            .map((e) => ({ t: toFloat(at(e.startTime)), code: num(e.start, 0) })),
+          color: leadIn(events(l.extended?.colorEvents, color, at), NOISE_COLOR, sameColor),
+          parentId: keep ? ids[i] : parentOf(l),
+          rotateWithParent: keep || rotates(l),
+          last,
+        }),
+      );
+      if (!keep) return;
+      // The line stays invisible; negative alpha still hides its notes.
+      lineLayers = lineLayers.map((y) => ({
+        ...y,
+        alpha: withIds(y.alpha, (v) => Math.min(v, 0)),
+      }));
+    }
     // Color goes to whatever the line shows: its text, its texture or the line itself.
     let lineColor = colorEvents(l, at);
     const textEvents = l.extended?.textEvents;
@@ -297,7 +360,7 @@ export function rpeToChart(
     }
 
     // Textured lines show the image instead of the line: same split as text lines.
-    const texture = rpeTexture(l);
+    const texture = subtract === null ? rpeTexture(l) : null;
     if (texture) {
       const item = textureMedia(l, name, texture, textures[texture] ?? null);
       item.color = colorEvents(l, at);
@@ -382,6 +445,6 @@ export function rpeToChart(
   chart.lines = lines;
   chart.texts = [...chart.texts, ...texts];
   chart.media = media;
-  chart.noiseFields = rpeToNoiseFields(rpeNoiseAreas(rpe));
+  chart.noiseFields = noise ? [...markers, ...rpeToNoiseFields(rpeNoiseAreas(rpe))] : [];
   return withDefaults(chart);
 }

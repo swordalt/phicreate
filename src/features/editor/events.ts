@@ -70,7 +70,7 @@ export function trackEvents(
     return isVarKey(key) ? (owner.vars[key.slice(4)] ?? []) : [];
   }
   if (isNoise(owner)) {
-    if (key === 'visible' || key === 'active') return owner[key];
+    if (key === 'visible' || key === 'active' || key === 'color') return owner[key];
     return layer && isChannel(key) ? layer[key] : [];
   }
   if (!layer || isVarKey(key) || key === 'active' || key === 'visible') return [];

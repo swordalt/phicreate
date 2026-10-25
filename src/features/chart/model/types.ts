@@ -156,6 +156,8 @@ export interface NoiseField {
   visible: NumEvent[];
   // Touchable ranges; `from` is the ready flash length in seconds (locked).
   active: NumEvent[];
+  // Tint; red (NOISE_COLOR) without events. Single track.
+  color: ColorEvent[];
 }
 
 // Objects with layers.

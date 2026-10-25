@@ -1,13 +1,19 @@
 // "Original" noise field look (after Phira's port of the official block renderer):
 // low-res masks -> wobbling compose -> edge/glow dilation -> full-res fill with sparks and scene distortion.
 
-import type { NoisePhase } from '@/features/chart/runtime/scene';
+import type { Color } from '@/features/chart/model/types';
+import { NOISE_COLOR, type NoisePhase } from '@/features/chart/runtime/scene';
 
 export type DevicePoint = [number, number];
 
+export interface NoiseShape {
+  points: DevicePoint[];
+  color: Color;
+}
+
 export interface NoiseShapes {
-  normal: DevicePoint[][];
-  subtract: DevicePoint[][];
+  normal: NoiseShape[];
+  subtract: NoiseShape[];
 }
 
 // Play frame in device pixels.
@@ -54,6 +60,10 @@ vec3 displace(sampler2D map, vec2 p, float shift) {
 const FILL_FRAG = `${HEADER}
 void main() { o = vec4(1.0); }`;
 
+const PAINT_FRAG = `${HEADER}
+uniform vec4 color;
+void main() { o = color; }`;
+
 // Normal union XOR subtract parity, wobbled for active fields.
 const COMPOSE_FRAG = `${HEADER}${DISPLACE}
 uniform sampler2D mask;
@@ -95,6 +105,8 @@ uniform sampler2D disabledMask;
 uniform sampler2D effect;
 uniform sampler2D displaceMap;
 uniform sampler2D sparkMap;
+uniform sampler2D colorMap;
+uniform float colored;
 uniform vec2 screen;
 uniform vec2 effectSize;
 uniform vec4 frame;
@@ -107,6 +119,26 @@ const vec3 GLOW = vec3(1.0, 0.179, 0.179);
 const vec3 SPARK = vec3(1.0, 0.285, 0.285);
 const vec3 DISABLED_FILL = vec3(0.497, 0.138, 0.138);
 const vec3 DISABLED_SPARK = vec3(0.311, 0.078, 0.078);
+const vec3 RED = vec3(1.0, 84.0 / 255.0, 84.0 / 255.0);
+
+// Field tint at uv (premultiplied by coverage, so divide).
+vec3 tintAt(vec2 p) {
+  if (colored < 0.5) return RED;
+  vec4 c = texture(colorMap, p);
+  return c.a > 0.001 ? c.rgb / c.a : RED;
+}
+
+// Moves a native red shade to rgb's hue, keeping its value and saturation (Phira).
+vec3 palette(vec3 native, vec3 rgb) {
+  if (all(lessThan(abs(rgb - RED), vec3(0.001)))) return native;
+  float high = max(rgb.r, max(rgb.g, rgb.b));
+  float low = min(rgb.r, min(rgb.g, rgb.b));
+  float delta = high - low;
+  if (delta < 0.00001) return vec3(native.r * high);
+  vec3 hue = (rgb - low) / delta;
+  float sat = (1.0 - native.g / max(native.r, 0.00001)) * (delta / max(high, 0.00001)) / (1.0 - 84.0 / 255.0);
+  return native.r * high * mix(vec3(1.0), hue, clamp(sat, 0.0, 1.0));
+}
 
 vec3 rgb2hsv(vec3 c) {
   vec4 k = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -133,12 +165,13 @@ void main() {
   float covered = texture(activeMask, uv).r;
   float ready = texture(readyMask, uv).r;
   float disabled = texture(disabledMask, uv).r * (1.0 - covered) * (1.0 - ready);
+  vec3 rgb = tintAt(uv);
 
   // Disabled: dim fill with faint sparks, added on top.
   if (disabled > 0.0) {
     vec3 d = displace(displaceMap, f * vec2(0.5, 0.2), time / 20.0 * 0.3);
     float spark = texture(sparkMap, f * vec2(3.0, 1.2) + d.xy * 2.29).r;
-    vec3 add = DISABLED_FILL * 0.4 + spark * DISABLED_SPARK * d.z * 3.5;
+    vec3 add = palette(DISABLED_FILL, rgb) * 0.4 + spark * palette(DISABLED_SPARK, rgb) * d.z * 3.5;
     base = vec4(base.rgb + add * disabled, max(base.a, disabled));
   }
 
@@ -155,12 +188,12 @@ void main() {
     vec3 d = displace(displaceMap, cf * vec2(0.8, 0.3), time / 20.0 * 1.5);
     vec3 sc = texture(scene, cell + d.xy * 0.15 * frame.zw).rgb;
     float spark = texture(sparkMap, f * vec2(3.0, 1.2) + d.xy * 2.39).r;
-    vec3 sparks = spark * SPARK * d.z * 5.69;
+    vec3 sparks = spark * palette(SPARK, rgb) * d.z * 5.69;
     vec3 hsv = rgb2hsv(sc) + sparks * 0.2;
     vec3 tinted = overlay(hsv2rgb(hsv), sparks);
-    vec3 fill = mix(FILL - d.z * 0.411, tinted, 0.667);
+    vec3 fill = mix(palette(FILL - d.z * 0.411, rgb), tinted, 0.667);
     float halo = glow * (1.0 - body);
-    color = fill * covered + EDGE * edge * 0.8 + GLOW * halo * 0.8;
+    color = fill * covered + palette(EDGE, rgb) * edge * 0.8 + palette(GLOW, rgb) * halo * 0.8;
     alpha = covered * 0.667 + edge * 0.8 + halo * 0.8;
   }
   // Ready: flickering shine.
@@ -188,7 +221,7 @@ const TEXTURE_BASE = `${import.meta.env.BASE_URL}assets/phigros/Texture/Noise/`;
 class NoiseEffect {
   readonly canvas = document.createElement('canvas');
   private gl: WebGL2RenderingContext | null;
-  private programs: Record<'fill' | 'compose' | 'glow' | 'final', Program> | null = null;
+  private programs: Record<'fill' | 'paint' | 'compose' | 'glow' | 'final', Program> | null = null;
   private quad: WebGLBuffer | null = null;
   private shapes: WebGLBuffer | null = null;
   private scene: WebGLTexture | null = null;
@@ -197,6 +230,7 @@ class NoiseEffect {
   private masks: Target[] = [];
   private composes: Target[] = [];
   private effects: Target[] = [];
+  private colors: Target[] = [];
 
   constructor() {
     this.gl = this.canvas.getContext('webgl2', {
@@ -211,6 +245,7 @@ class NoiseEffect {
     try {
       this.programs = {
         fill: this.link(FILL_FRAG),
+        paint: this.link(PAINT_FRAG),
         compose: this.link(COMPOSE_FRAG),
         glow: this.link(GLOW_FRAG),
         final: this.link(FINAL_FRAG),
@@ -382,7 +417,7 @@ class NoiseEffect {
     let y1 = -Infinity;
     for (const phase of PHASES) {
       for (const q of [...groups[phase].normal, ...groups[phase].subtract]) {
-        for (const [x, y] of q) {
+        for (const [x, y] of q.points) {
           x0 = Math.min(x0, x);
           y0 = Math.min(y0, y);
           x1 = Math.max(x1, x);
@@ -433,10 +468,18 @@ class NoiseEffect {
       gl.enable(gl.BLEND);
       gl.colorMask(true, false, false, false);
       gl.blendFunc(gl.ONE, gl.ONE);
-      this.drawQuads(groups[phase].normal, W, H);
+      this.drawQuads(
+        groups[phase].normal.map((s) => s.points),
+        W,
+        H,
+      );
       gl.colorMask(false, true, false, false);
       gl.blendFunc(gl.ONE_MINUS_DST_COLOR, gl.ZERO);
-      this.drawQuads(groups[phase].subtract, W, H);
+      this.drawQuads(
+        groups[phase].subtract.map((s) => s.points),
+        W,
+        H,
+      );
       gl.colorMask(true, true, true, true);
       gl.disable(gl.BLEND);
 
@@ -468,6 +511,29 @@ class NoiseEffect {
       prev = out.texture;
     });
 
+    // Nearest field's tint: grown quads reach the glow, exact quads win inside.
+    const tinted = PHASES.some((phase) =>
+      [...groups[phase].normal, ...groups[phase].subtract].some(
+        (s) => !s.color.every((v, k) => v === NOISE_COLOR[k]),
+      ),
+    );
+    const colorMap = this.target(this.colors, 0, mw, mh, gl.LINEAR);
+    if (tinted) {
+      this.into(colorMap, mw, mh);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      // Later phases and normal fields paint over.
+      const order = [...PHASES]
+        .reverse()
+        .flatMap((phase) => [...groups[phase].subtract, ...groups[phase].normal]);
+      for (const grow of [pad, 0]) {
+        for (const s of order) {
+          this.use('paint', { color: [...s.color.map((v) => v / 255), 1] });
+          this.drawQuads([grow ? expand(s.points, grow) : s.points], W, H);
+        }
+      }
+    }
+
     // Composite into the drawing buffer within the padded rect.
     this.into(null, W, H);
     gl.enable(gl.SCISSOR_TEST);
@@ -478,6 +544,7 @@ class NoiseEffect {
       frame: frameUv,
       unit: [unit],
       time: [time],
+      colored: [tinted ? 1 : 0],
     });
     this.bind(u, {
       scene: this.scene!,
@@ -487,6 +554,7 @@ class NoiseEffect {
       effect: prev,
       displaceMap: this.displace!,
       sparkMap: this.spark!,
+      colorMap: colorMap.texture,
     });
     this.fullscreen();
     gl.disable(gl.SCISSOR_TEST);
@@ -499,6 +567,21 @@ class NoiseEffect {
     ctx.drawImage(this.canvas, rx, ry, rw, rh, rx, ry, rw, rh);
     ctx.restore();
   }
+}
+
+// Pushes each corner of a convex quad outward by `d` along both of its edges.
+function expand(q: DevicePoint[], d: number): DevicePoint[] {
+  const away = (p: DevicePoint, o: DevicePoint): DevicePoint => {
+    const dx = p[0] - o[0];
+    const dy = p[1] - o[1];
+    const len = Math.hypot(dx, dy);
+    return len > 1e-6 ? [dx / len, dy / len] : [0, 0];
+  };
+  return q.map((p, i) => {
+    const u = away(p, q[(i + q.length - 1) % q.length]);
+    const v = away(p, q[(i + 1) % q.length]);
+    return [p[0] + (u[0] + v[0]) * d, p[1] + (u[1] + v[1]) * d];
+  });
 }
 
 let effect: NoiseEffect | null = null;

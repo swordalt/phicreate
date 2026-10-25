@@ -268,6 +268,7 @@ export function officialToNoiseFields(
       layers,
       visible: [range(appear, disappear)].filter(valid),
       active: disable > enable ? [range(enable, disable, NOISE_READY_FLASH)].filter(valid) : [],
+      color: [],
     };
   });
 }

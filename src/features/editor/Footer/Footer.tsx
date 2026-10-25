@@ -107,7 +107,8 @@ export function Footer() {
       'Color',
       lines.reduce((n, o) => n + o.color.length, 0) +
         texts.reduce((n, o) => n + o.color.length, 0) +
-        media.reduce((n, o) => n + o.color.length, 0),
+        media.reduce((n, o) => n + o.color.length, 0) +
+        noiseFields.reduce((n, o) => n + o.color.length, 0),
     ],
     ['Text', texts.reduce((n, t) => n + t.value.length, 0)],
     ['Media start', media.reduce((n, m) => n + m.starts.length, 0)],

@@ -57,9 +57,9 @@ export function LandingPage() {
 
   const confirmImport = async ({ noise }: ImportOptions) => {
     if (!pending) return;
-    const { project, format } = pending;
+    const { format, withoutNoise } = pending;
+    const project = !noise && withoutNoise ? withoutNoise() : pending.project;
     setPending(null);
-    if (format === 'rpe' && !noise) project.chart.noiseFields = [];
     await add(project);
     if (format !== 'phicreate') openProject(project.meta.id);
     else updateSettings({ lastProjectId: project.meta.id });

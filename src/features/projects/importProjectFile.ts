@@ -4,7 +4,13 @@ import { isRpeChart } from '@/features/chart/io/rpe/types';
 import { unzipAsync } from '@/lib/zip';
 import { PROJECT_FILE } from './exportProject';
 import { fromExport } from './projectFactory';
-import { importChartFiles, mimeOf, officialToProject, rpeToProject } from './importRpe';
+import {
+  importChartFiles,
+  mimeOf,
+  officialToProject,
+  rpeToProject,
+  withNoiseOption,
+} from './importRpe';
 import { named } from './projectRepo';
 import type { ImportResult, PackageFile, ProjectExport } from './types';
 
@@ -65,5 +71,6 @@ export async function importProjectFile(file: File): Promise<ImportResult | null
   const project = fromExport(data);
   if (project) return { project, format: 'phicreate' };
   if (isOfficialChart(data)) return { project: officialToProject(data), format: 'official' };
-  return isRpeChart(data) ? { project: rpeToProject(data), format: 'rpe' } : null;
+  if (!isRpeChart(data)) return null;
+  return withNoiseOption((noise) => rpeToProject(data, {}, {}, {}, undefined, {}, { noise }));
 }

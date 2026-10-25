@@ -1,12 +1,12 @@
-import type { NoiseField } from '@/features/chart/model/types';
+import type { Color, NoiseField } from '@/features/chart/model/types';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/features/chart/model/defaults';
 import type { NoisePhase, NoiseState } from '@/features/chart/runtime/scene';
 import { renderNoiseEffect, type DevicePoint, type NoiseShapes } from './noiseEffect';
 
-// Flat look after rpe-next: dim while disabled, brighter while active, red edges.
+// Flat look after rpe-next: dim while disabled, brighter while active, tinted edges.
 const DISABLED_FILL: [number, number, number, number] = [127, 35, 35, 0.4];
 const ACTIVE_FILL: [number, number, number, number] = [182, 60, 60, 0.667];
-const EDGE_COLOR = '#ff5454';
+const EDGE_FILL: [number, number, number, number] = [255, 84, 84, 1];
 const SELECTED_COLOR = '#39ff14';
 // Edge thickness in device pixels.
 const EDGE = 2;
@@ -66,26 +66,33 @@ const lerp = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i] 
 const rgba = ([r, g, b, a]: number[]) =>
   `rgba(${Math.round(r)},${Math.round(g)},${Math.round(b)},${a})`;
 
-let buffers: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement] | null = null;
+// Moves a native red shade to `color`'s hue, keeping its value and saturation (Phira).
+function palette([r, g, b, a]: number[], color: Color) {
+  const [cr, cg, cb] = color.map((v) => v / 255);
+  if (color[0] === 255 && color[1] === 84 && color[2] === 84) return [r, g, b, a];
+  const high = Math.max(cr, cg, cb);
+  const low = Math.min(cr, cg, cb);
+  const delta = high - low;
+  if (delta < 1e-5) return [r * high, r * high, r * high, a];
+  const sat = Math.min(
+    1,
+    Math.max(0, ((1 - g / Math.max(r, 1e-5)) * (delta / high)) / (1 - 84 / 255)),
+  );
+  return [...[cr, cg, cb].map((c) => r * high * (1 + ((c - low) / delta - 1) * sat)), a];
+}
 
-// Mask, scratch and layer canvases matching the target's backing size.
+let buffers: HTMLCanvasElement[] | null = null;
+
+// Mask, scratch, layer and paint canvases matching the target's backing size.
 function getBuffers(target: HTMLCanvasElement) {
-  buffers ??= [
-    document.createElement('canvas'),
-    document.createElement('canvas'),
-    document.createElement('canvas'),
-  ];
+  buffers ??= [0, 1, 2, 3].map(() => document.createElement('canvas'));
   for (const c of buffers) {
     if (c.width !== target.width || c.height !== target.height) {
       c.width = target.width;
       c.height = target.height;
     }
   }
-  return buffers.map((c) => c.getContext('2d')!) as [
-    CanvasRenderingContext2D,
-    CanvasRenderingContext2D,
-    CanvasRenderingContext2D,
-  ];
+  return buffers.map((c) => c.getContext('2d')!);
 }
 
 function clear(ctx: CanvasRenderingContext2D) {
@@ -95,17 +102,47 @@ function clear(ctx: CanvasRenderingContext2D) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 }
 
-// Copies `src` filled with a flat color.
-function tint(dst: CanvasRenderingContext2D, src: HTMLCanvasElement, color: string) {
+// Fills `src`'s coverage with each field's color (`shade` of it); fields grow so edges outside take the nearest.
+function tint(
+  dst: CanvasRenderingContext2D,
+  src: HTMLCanvasElement,
+  items: Shown[],
+  vp: NoiseViewport,
+  transform: DOMMatrix,
+  shade: (color: Color) => string,
+) {
   clear(dst);
+  dst.setTransform(transform);
+  const grow = (EDGE * 3) / Math.max(Math.hypot(transform.a, transform.b), 1e-6);
+  // Normal fields paint over subtract ones.
+  const order = [...items].sort((a, b) => Number(!a.field.subtract) - Number(!b.field.subtract));
+  for (const g of [grow, 0]) {
+    for (const { field, state } of order) {
+      dst.fillStyle = shade(state.color);
+      quad(dst, g ? expand(corners(field, state, vp), g) : corners(field, state, vp));
+      dst.fill();
+    }
+  }
+  dst.setTransform(1, 0, 0, 1, 0, 0);
+  dst.globalCompositeOperation = 'destination-in';
   dst.drawImage(src, 0, 0);
-  dst.globalCompositeOperation = 'source-in';
-  dst.fillStyle = color;
-  dst.fillRect(0, 0, dst.canvas.width, dst.canvas.height);
   dst.globalCompositeOperation = 'source-over';
 }
 
-// Leaves only the mask's boundary: mask minus its erosion.
+// Pushes each corner of a convex quad outward by `d` along both of its edges.
+function expand(q: Point[], d: number): Point[] {
+  const away = (p: Point, o: Point): Point => {
+    const len = Math.hypot(p[0] - o[0], p[1] - o[1]);
+    return len > 1e-6 ? [(p[0] - o[0]) / len, (p[1] - o[1]) / len] : [0, 0];
+  };
+  return q.map((p, i) => {
+    const u = away(p, q[(i + 3) % 4]);
+    const v = away(p, q[(i + 1) % 4]);
+    return [p[0] + (u[0] + v[0]) * d, p[1] + (u[1] + v[1]) * d];
+  });
+}
+
+// Leaves only the mask's boundary: mask minus its erosion (white).
 function edges(dst: CanvasRenderingContext2D, mask: HTMLCanvasElement) {
   clear(dst);
   dst.drawImage(mask, 0, 0);
@@ -117,9 +154,6 @@ function edges(dst: CanvasRenderingContext2D, mask: HTMLCanvasElement) {
   }
   dst.globalCompositeOperation = 'xor';
   dst.drawImage(mask, 0, 0);
-  dst.globalCompositeOperation = 'source-in';
-  dst.fillStyle = EDGE_COLOR;
-  dst.fillRect(0, 0, dst.canvas.width, dst.canvas.height);
   dst.globalCompositeOperation = 'source-over';
 }
 
@@ -166,7 +200,10 @@ function drawOriginal(
   const m = ctx.getTransform();
   const device = ([x, y]: Point): DevicePoint => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
   const shapes = (list: Shown[]) =>
-    list.map(({ field, state }) => corners(field, state, vp).map(device));
+    list.map(({ field, state }) => ({
+      points: corners(field, state, vp).map(device),
+      color: state.color,
+    }));
   const byPhase = Object.fromEntries(
     PHASES.map((phase, i) => [
       phase,
@@ -209,7 +246,7 @@ export function drawNoiseFields(
   if (rect) {
     const [x, y, w, h] = rect;
     const bufs = getBuffers(ctx.canvas);
-    const [mask, scratch, layer] = bufs;
+    const [mask, scratch, layer, paint] = bufs;
     // Everything drawn stays inside rect; clip the full-canvas compositing to it.
     for (const b of bufs) {
       clear(b);
@@ -240,11 +277,14 @@ export function drawNoiseFields(
       layer.globalCompositeOperation = 'destination-out';
       layer.drawImage(mask.canvas, 0, 0);
       layer.globalCompositeOperation = 'source-over';
-      tint(scratch, mask.canvas, rgba(lerp(DISABLED_FILL, ACTIVE_FILL, mix)));
-      layer.drawImage(scratch.canvas, 0, 0);
+      const items = [...normal, ...subtract];
+      const fill = lerp(DISABLED_FILL, ACTIVE_FILL, mix);
+      tint(paint, mask.canvas, items, vp, transform, (c) => rgba(palette(fill, c)));
+      layer.drawImage(paint.canvas, 0, 0);
       edges(scratch, mask.canvas);
+      tint(paint, scratch.canvas, items, vp, transform, (c) => rgba(palette(EDGE_FILL, c)));
       layer.globalAlpha = 0.6 + 0.4 * mix;
-      layer.drawImage(scratch.canvas, 0, 0);
+      layer.drawImage(paint.canvas, 0, 0);
       layer.globalAlpha = 1;
     }
     for (const b of bufs) b.restore();

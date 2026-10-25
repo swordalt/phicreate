@@ -181,6 +181,7 @@ export function rpeToNoiseFields(list: RpeNoiseArea[]): NoiseField[] {
           ),
         ),
       ).sort((x, y) => cmp(x.start, y.start)),
+      color: [],
     };
   });
 }

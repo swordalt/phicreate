@@ -117,6 +117,7 @@ export const createNoiseField = (name: string, start: Beat = [0, 0, 1]): NoiseFi
       NOISE_READY_FLASH,
     ),
   ],
+  color: [],
 });
 
 // Positions are canvas units (1350 x 900, origin center, +Y up), ~20 from the 3:2 frame edge.

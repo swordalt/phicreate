@@ -20,7 +20,7 @@ const yesNo = (v: boolean) => (v ? 'Yes' : 'No');
 export function ImportConfirmModal({ result, onConfirm, onCancel }: ImportConfirmModalProps) {
   const [noise, setNoise] = useState(true);
   useEffect(() => setNoise(true), [result]);
-  const hasNoise = result?.format === 'rpe' && result.project.chart.noiseFields.length > 0;
+  const hasNoise = !!result?.withoutNoise;
   const rows: [string, string | number][] = [];
   if (result) {
     const { project, format } = result;
@@ -76,7 +76,7 @@ export function ImportConfirmModal({ result, onConfirm, onCancel }: ImportConfir
         <div className={styles.options}>
           <Toggle
             label="Convert noise fields"
-            hint="RPE-Next block areas. Link groups and noise layers are dropped."
+            hint="RPE-Next exports noise fields as static images. PhiCreate can convert them back into editable noise fields."
             checked={noise}
             onChange={setNoise}
           />

@@ -45,6 +45,8 @@ export type ImportFormat = 'phicreate' | 'official' | 'rpe';
 export interface ImportResult {
   project: Project;
   format: ImportFormat;
+  // Same chart with noise fields left unconverted; set when `project` has any.
+  withoutNoise?: () => Project;
 }
 
 export type ProjectFormValues = Pick<

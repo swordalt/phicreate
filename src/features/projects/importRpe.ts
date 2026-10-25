@@ -10,7 +10,8 @@ import {
 } from '@/features/chart/io/rpe/extra';
 import { officialToChart } from '@/features/chart/io/official/fromOfficial';
 import { isOfficialChart, type OfficialChart } from '@/features/chart/io/official/types';
-import { rpeToChart } from '@/features/chart/io/rpe/fromRpe';
+import { rpeToChart, type RpeImportOptions } from '@/features/chart/io/rpe/fromRpe';
+import { markerKind, pngSize } from '@/features/chart/io/rpe/markers';
 import { isRpeChart, rpeTexture, type RpeChart } from '@/features/chart/io/rpe/types';
 import {
   PROJECT_SCHEMA_VERSION,
@@ -129,7 +130,7 @@ export function officialToProject(
 }
 
 // Without files (plain JSON), media objects are created empty.
-// `files` = line textures and extra.json videos by path.
+// `files` = line textures and extra.json videos by path (noise marker textures only when not converted).
 export function rpeToProject(
   rpe: RpeChart,
   info: Info = {},
@@ -137,6 +138,7 @@ export function rpeToProject(
   files: Record<string, Blob> = {},
   extra?: RpeExtra,
   shaders: ShaderSources = {},
+  options: RpeImportOptions = {},
 ): Project {
   const meta = rpe.META ?? {};
   const name = (info.name || meta.name || 'Untitled').trim();
@@ -147,7 +149,7 @@ export function rpeToProject(
     media[ids[name]] = named(blob, name.replace(/^.*[\\/]/, ''));
   }
   const lineIds = rpe.judgeLineList.map(() => createId());
-  const chart = rpeToChart(rpe, ids, lineIds);
+  const chart = rpeToChart(rpe, ids, lineIds, options);
   if (extra) {
     chart.effects = extraToEffects(extra, chart.bpmList, shaders);
     const kept = new Set(chart.lines.map((l) => l.id));
@@ -218,11 +220,22 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
   }
   if (!rpe) return null;
 
+  // Noise marker textures only give their size, unless markers stay images.
   const mediaFiles: Record<string, Blob> = {};
+  const markerFiles: Record<string, Blob> = {};
+  const markerSizes: Record<string, [number, number]> = {};
   for (const line of rpe.judgeLineList) {
     const name = line && rpeTexture(line);
-    const file = name && !(name in mediaFiles) && blob(name);
-    if (name && file) mediaFiles[name] = file;
+    if (!name || name in mediaFiles || name in markerFiles) continue;
+    const file = blob(name);
+    if (!file) continue;
+    if (markerKind(name) === null) {
+      mediaFiles[name] = file;
+      continue;
+    }
+    markerFiles[name] = file;
+    const size = pngSize(files[find(name)!]);
+    if (size) markerSizes[name] = size;
   }
 
   // extra.json: video files, then custom shaders ('/name.glsl') for effects.
@@ -242,16 +255,32 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
     if (path) shaders[shader] = strFromU8(files[path]);
   }
 
-  const project = rpeToProject(
-    rpe,
-    info,
-    {
-      audio: blob(info.song || rpe.META?.song),
-      illustration: blob(info.picture || rpe.META?.background),
-    },
-    mediaFiles,
-    extra,
-    shaders,
-  );
-  return { project: withInfoOffset(project, info), format: 'rpe' };
+  const assets = {
+    audio: blob(info.song || rpe.META?.song),
+    illustration: blob(info.picture || rpe.META?.background),
+  };
+  const build = (noise: boolean) =>
+    withInfoOffset(
+      rpeToProject(
+        rpe!,
+        info,
+        assets,
+        noise ? mediaFiles : { ...mediaFiles, ...markerFiles },
+        extra,
+        shaders,
+        { noise, markerSizes },
+      ),
+      info,
+    );
+  return withNoiseOption(build);
+}
+
+// Converts with noise fields, offering the unconverted chart when there are any.
+export function withNoiseOption(build: (noise: boolean) => Project): ImportResult {
+  const project = build(true);
+  return {
+    project,
+    format: 'rpe',
+    ...(project.chart.noiseFields.length > 0 && { withoutNoise: () => build(false) }),
+  };
 }
