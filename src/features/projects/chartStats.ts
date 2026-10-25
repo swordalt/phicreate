@@ -5,6 +5,7 @@ export const FORMAT_LABELS: Record<ImportFormat, string> = {
   phicreate: 'PhiCreate',
   official: 'Phigros (official)',
   rpe: 'Re:PhiEdit',
+  pec: 'PhiEdit',
 };
 
 export interface ChartStats {

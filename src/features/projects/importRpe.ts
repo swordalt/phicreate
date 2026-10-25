@@ -10,6 +10,7 @@ import {
 } from '@/features/chart/io/rpe/extra';
 import { officialToChart } from '@/features/chart/io/official/fromOfficial';
 import { isOfficialChart, type OfficialChart } from '@/features/chart/io/official/types';
+import { isPecText, PEC_SNIFF_BYTES, pecToChart } from '@/features/chart/io/pec/fromPec';
 import { rpeToChart, type RpeImportOptions } from '@/features/chart/io/rpe/fromRpe';
 import { markerKind, pngSize } from '@/features/chart/io/rpe/markers';
 import { isRpeChart, rpeTexture, type RpeChart } from '@/features/chart/io/rpe/types';
@@ -73,9 +74,64 @@ function withInfoOffset(project: Project, info: Info): Project {
   return project;
 }
 
+// PhiEdit info.csv columns, as info keys.
+const CSV_KEYS: Record<string, string> = {
+  chart: 'chart',
+  music: 'song',
+  image: 'picture',
+  name: 'name',
+  level: 'level',
+  illustrator: 'illustrator',
+  designer: 'charter',
+  composer: 'composer',
+  artist: 'composer',
+};
+
+function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') cell += c;
+      else if (text[i + 1] === '"') cell += text[++i];
+      else quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else cell += c;
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows.filter((r) => r.some((v) => v.trim()));
+}
+
+// info.csv: a header row, a translated header row, then one row per chart.
+function parseInfoCsv(text: string): Info[] {
+  const [header, , ...data] = csvRows(text.replace(/^\uFEFF/, ''));
+  if (!header) return [];
+  const keys = header.map((h) => CSV_KEYS[h.trim().toLowerCase()]);
+  return data.map((row) => {
+    const info: Info = {};
+    keys.forEach((k, i) => {
+      if (k && row[i]?.trim()) info[k] = row[i].trim();
+    });
+    return info;
+  });
+}
+
 function parseJson(data: Uint8Array): unknown {
   try {
-    return JSON.parse(strFromU8(data).replace(/^﻿/, ''));
+    return JSON.parse(strFromU8(data).replace(/^\uFEFF/, ''));
   } catch {
     return null;
   }
@@ -108,6 +164,21 @@ function buildProject(
     media,
     shaders,
   };
+}
+
+// PEC charts carry no metadata; it comes from info.txt / info.yml.
+export function pecToProject(text: string, info: Info = {}, assets: ProjectAssets = {}): Project {
+  return buildProject(
+    {
+      name: (info.name || 'Untitled').trim(),
+      artist: (info.composer || '').trim(),
+      illustrator: (info.illustrator || '').trim(),
+      charter: (info.charter || '').trim(),
+      difficulty: (info.level || '').trim(),
+    },
+    pecToChart(text),
+    assets,
+  );
 }
 
 // Official charts carry no metadata; it comes from info.txt / info.yml.
@@ -192,7 +263,9 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
   };
 
   const infoPath = paths.find((p) => /(^|\/)info\.(txt|ya?ml)$/i.test(p));
-  const info = infoPath ? parseInfo(strFromU8(files[infoPath])) : {};
+  const csvPath = paths.find((p) => /(^|\/)info\.csv$/i.test(p));
+  const csvInfos = !infoPath && csvPath ? parseInfoCsv(strFromU8(files[csvPath])) : [];
+  let info = infoPath ? parseInfo(strFromU8(files[infoPath])) : (csvInfos[0] ?? {});
 
   const blob = (name?: string) => {
     const path = find(name);
@@ -202,8 +275,18 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
 
   let rpe: RpeChart | null = null;
   const chartPath = find(info.chart);
-  const candidates = chartPath ? [chartPath] : paths.filter((p) => /\.json$/i.test(p));
+  const candidates = chartPath ? [chartPath] : paths.filter((p) => /\.(json|pec)$/i.test(p));
   for (const p of candidates) {
+    // PEC is sniffed by content: packages often name it .json.
+    if (isPecText(strFromU8(files[p].subarray(0, PEC_SNIFF_BYTES)))) {
+      const base = p.replace(/^.*\//, '').toLowerCase();
+      info = csvInfos.find((i) => i.chart?.toLowerCase() === base) ?? info;
+      const project = pecToProject(strFromU8(files[p]), info, {
+        audio: blob(info.song),
+        illustration: blob(info.picture),
+      });
+      return { project: withInfoOffset(project, info), format: 'pec' };
+    }
     const data = parseJson(files[p]);
     // Checked first: both formats have judgeLineList.
     if (isOfficialChart(data)) {

@@ -40,7 +40,7 @@ export interface Project extends ProjectAssets {
   fonts?: FontFiles;
 }
 
-export type ImportFormat = 'phicreate' | 'official' | 'rpe';
+export type ImportFormat = 'phicreate' | 'official' | 'rpe' | 'pec';
 
 export interface ImportResult {
   project: Project;
