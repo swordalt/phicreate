@@ -218,6 +218,13 @@ export function pecToChart(text: string): Chart {
   if (bpms.length) chart.bpmList = bpms.map((b) => ({ beat: beat(b.beat), bpm: b.bpm }));
   chart.offsetMs = offset - OFFSET_SHIFT_MS;
 
+  const notesByLine = new Map<number, PecNote[]>();
+  for (const p of notes) {
+    const list = notesByLine.get(p.line);
+    if (list) list.push(p);
+    else notesByLine.set(p.line, [p]);
+  }
+
   chart.lines = Array.from({ length: lineCount }, (_, i): JudgeLine => {
     const line = createLine(`Line ${i}`);
     const base = line.layers[0];
@@ -225,8 +232,7 @@ export function pecToChart(text: string): Chart {
     for (const c of Object.keys(channels) as Channel[]) {
       base[c] = buildEvents(channels[c]!, HELD[c]);
     }
-    line.notes = notes
-      .filter((p) => p.line === i)
+    line.notes = (notesByLine.get(i) ?? [])
       .map((p) => {
         const hold = p.type === 'hold' && p.end > p.start;
         return createNote({

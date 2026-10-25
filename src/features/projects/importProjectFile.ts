@@ -1,6 +1,5 @@
 import { strFromU8 } from 'fflate';
 import { isOfficialChart } from '@/features/chart/io/official/types';
-import { isPecText } from '@/features/chart/io/pec/fromPec';
 import { isRpeChart } from '@/features/chart/io/rpe/types';
 import { unzipAsync } from '@/lib/zip';
 import { PROJECT_FILE } from './exportProject';
@@ -14,6 +13,7 @@ import {
   withNoiseOption,
 } from './importRpe';
 import { named } from './projectRepo';
+import { sniffFormat } from './sniffFormat';
 import type { ImportResult, PackageFile, ProjectExport } from './types';
 
 export const IMPORT_ACCEPT = '.json,.pec,.pez,.zip,application/json,application/zip';
@@ -32,7 +32,7 @@ function phicreatePackage(files: Record<string, Uint8Array>): ImportResult | nul
   const project = fromExport(data);
   if (!project) return null;
   const blob = (path?: string, type = path ? mimeOf(path) : '') =>
-    path && files[path] ? new Blob([files[path].slice()], { type }) : undefined;
+    path && files[path] ? new Blob([files[path] as Uint8Array<ArrayBuffer>], { type }) : undefined;
   const fileBlob = (file: PackageFile) => {
     const b = blob(file.path, file.type);
     return b && file.name ? named(b, file.name) : b;
@@ -60,11 +60,7 @@ function phicreatePackage(files: Record<string, Uint8Array>): ImportResult | nul
 
 // PhiCreate, RPE or official JSON, or a PhiCreate / PEZ / ZIP package.
 export async function importProjectFile(file: File): Promise<ImportResult | null> {
-  const plain = /\.(json|pec)$/i.test(file.name);
-  // PEC is sniffed by content; it is often named .json.
-  const text = plain ? await file.text() : '';
-  if (plain && isPecText(text)) return { project: pecToProject(text), format: 'pec' };
-  if (!plain) {
+  if (!/\.(json|pec)$/i.test(file.name)) {
     let files: Record<string, Uint8Array>;
     try {
       files = await unzipAsync(new Uint8Array(await file.arrayBuffer()));
@@ -73,10 +69,18 @@ export async function importProjectFile(file: File): Promise<ImportResult | null
     }
     return phicreatePackage(files) ?? importChartFiles(files);
   }
+  const text = await file.text();
+  // Sniffed by content: PEC is often named .json, and only one JSON check needs to run.
+  const kind = sniffFormat(text);
+  if (!kind) return null;
+  if (kind === 'pec') return { project: pecToProject(text), format: 'pec' };
   const data = parse(text);
-  const project = fromExport(data);
+  const may = (k: typeof kind) => kind === 'json' || kind === k;
+  const project = may('phicreate') ? fromExport(data) : null;
   if (project) return { project, format: 'phicreate' };
-  if (isOfficialChart(data)) return { project: officialToProject(data), format: 'official' };
-  if (!isRpeChart(data)) return null;
+  if (may('official') && isOfficialChart(data)) {
+    return { project: officialToProject(data), format: 'official' };
+  }
+  if (!may('rpe') || !isRpeChart(data)) return null;
   return withNoiseOption((noise) => rpeToProject(data, {}, {}, {}, undefined, {}, { noise }));
 }

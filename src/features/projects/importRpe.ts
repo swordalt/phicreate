@@ -1,6 +1,7 @@
 import { strFromU8 } from 'fflate';
 import { createId } from '@/lib/id';
 import { named } from './projectRepo';
+import { SNIFF_BYTES, sniffFormat } from './sniffFormat';
 import { unzipAsync } from '@/lib/zip';
 import {
   extraToEffects,
@@ -10,7 +11,7 @@ import {
 } from '@/features/chart/io/rpe/extra';
 import { officialToChart } from '@/features/chart/io/official/fromOfficial';
 import { isOfficialChart, type OfficialChart } from '@/features/chart/io/official/types';
-import { isPecText, PEC_SNIFF_BYTES, pecToChart } from '@/features/chart/io/pec/fromPec';
+import { pecToChart } from '@/features/chart/io/pec/fromPec';
 import { rpeToChart, type RpeImportOptions } from '@/features/chart/io/rpe/fromRpe';
 import { markerKind, pngSize } from '@/features/chart/io/rpe/markers';
 import { isRpeChart, rpeTexture, type RpeChart } from '@/features/chart/io/rpe/types';
@@ -256,10 +257,15 @@ export async function importChartPackage(file: Blob): Promise<ImportResult | nul
 // Unzipped PEZ / ZIP package.
 export function importChartFiles(files: Record<string, Uint8Array>): ImportResult | null {
   const paths = Object.keys(files).filter((p) => !p.endsWith('/'));
+  const lowerPaths = paths.map((p) => p.toLowerCase());
+  const found = new Map<string, string | undefined>();
   const find = (name?: string) => {
     if (!name) return undefined;
     const lower = name.replace(/\\/g, '/').toLowerCase();
-    return paths.find((p) => p.toLowerCase() === lower || p.toLowerCase().endsWith(`/${lower}`));
+    if (!found.has(lower)) {
+      found.set(lower, paths[lowerPaths.findIndex((p) => p === lower || p.endsWith(`/${lower}`))]);
+    }
+    return found.get(lower);
   };
 
   const infoPath = paths.find((p) => /(^|\/)info\.(txt|ya?ml)$/i.test(p));
@@ -270,15 +276,22 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
   const blob = (name?: string) => {
     const path = find(name);
     if (!path) return undefined;
-    return new Blob([files[path].slice()], { type: mimeOf(path) });
+    return new Blob([files[path] as Uint8Array<ArrayBuffer>], { type: mimeOf(path) });
   };
 
   let rpe: RpeChart | null = null;
   const chartPath = find(info.chart);
-  const candidates = chartPath ? [chartPath] : paths.filter((p) => /\.(json|pec)$/i.test(p));
-  for (const p of candidates) {
-    // PEC is sniffed by content: packages often name it .json.
-    if (isPecText(strFromU8(files[p].subarray(0, PEC_SNIFF_BYTES)))) {
+  // Sniffed by content: PEC is often named .json, and other JSON (extra.json, ...) isn't parsed.
+  const candidates = (
+    chartPath ? [chartPath] : paths.filter((p) => /\.(json|pec)$/i.test(p))
+  ).map((p) => ({ p, kind: sniffFormat(strFromU8(files[p].subarray(0, SNIFF_BYTES))) }));
+  // Identified charts first; unidentified JSON only as a fallback.
+  const ordered = [
+    ...candidates.filter((c) => c.kind === 'pec' || c.kind === 'rpe' || c.kind === 'official'),
+    ...candidates.filter((c) => c.kind === 'json'),
+  ];
+  for (const { p, kind } of ordered) {
+    if (kind === 'pec') {
       const base = p.replace(/^.*\//, '').toLowerCase();
       info = csvInfos.find((i) => i.chart?.toLowerCase() === base) ?? info;
       const project = pecToProject(strFromU8(files[p]), info, {
@@ -289,14 +302,14 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
     }
     const data = parseJson(files[p]);
     // Checked first: both formats have judgeLineList.
-    if (isOfficialChart(data)) {
+    if (kind !== 'rpe' && isOfficialChart(data)) {
       const project = officialToProject(data, info, {
         audio: blob(info.song),
         illustration: blob(info.picture),
       });
       return { project: withInfoOffset(project, info), format: 'official' };
     }
-    if (isRpeChart(data)) {
+    if (kind !== 'official' && isRpeChart(data)) {
       rpe = data;
       break;
     }
