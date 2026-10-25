@@ -2,6 +2,8 @@ import type { ShaderEffect } from '@/features/chart/model/types';
 import { patchEffect, type EffectPatch } from '@/features/chart/runtime/commands';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import {
+  EXTRA_NAMES,
+  PHIRA_NAMES,
   PRESET_NAMES,
   shaderSource,
   shaderUniforms,
@@ -10,7 +12,7 @@ import {
 import { shaderError } from '@/features/shaders/pipeline';
 import { parseNumber } from '@/lib/number';
 import { CommitInput } from '../CommitInput';
-import { Check, Row, Section } from './fields';
+import { Row, Section } from './fields';
 import styles from './SidePanel.module.css';
 
 export function ShaderProperties({ effect }: { effect: ShaderEffect }) {
@@ -31,6 +33,16 @@ export function ShaderProperties({ effect }: { effect: ShaderEffect }) {
     (s) => !PRESET_NAMES.includes(s),
   );
 
+  const presetGroup = (label: string, names: string[]) => (
+    <optgroup label={label}>
+      {names.map((name) => (
+        <option key={name} value={name} disabled={taken.has(name)}>
+          {name}
+        </option>
+      ))}
+    </optgroup>
+  );
+
   return (
     <Section title="Shader properties">
       <div className={styles.props}>
@@ -45,13 +57,8 @@ export function ShaderProperties({ effect }: { effect: ShaderEffect }) {
         </Row>
         <Row label="Shader">
           <select value={effect.shader} onChange={(e) => patch({ shader: e.target.value })}>
-            <optgroup label="Presets">
-              {PRESET_NAMES.map((name) => (
-                <option key={name} value={name} disabled={taken.has(name)}>
-                  {name}
-                </option>
-              ))}
-            </optgroup>
+            {presetGroup('Phira presets', PHIRA_NAMES)}
+            {presetGroup('Extra presets (bundled on export)', EXTRA_NAMES)}
             {options.length > 0 && (
               <optgroup label="Custom">
                 {options.map((path) => (
@@ -67,11 +74,6 @@ export function ShaderProperties({ effect }: { effect: ShaderEffect }) {
           <p className={styles.muted}>Shader file not found. Add it in the Library to preview.</p>
         )}
         {error && <pre className={styles.error}>{error}</pre>}
-        <Check
-          label="Cover UI (global)"
-          checked={effect.global}
-          onChange={(global) => patch({ global })}
-        />
         <Row label="Order">
           <CommitInput
             value={String(effect.order)}
@@ -85,7 +87,7 @@ export function ShaderProperties({ effect }: { effect: ShaderEffect }) {
           />
         </Row>
         <p className={styles.muted}>
-          {`Set when it runs in the Active column${
+          {`Set when it runs (and whether it covers the UI) in the Active column${
             uniforms.length ? `; animate ${uniforms.map((u) => u.name).join(', ')}` : ''
           } in the event grid.`}
         </p>

@@ -1,17 +1,105 @@
 import { create } from 'zustand';
 
-// Preset shaders mirrored from Phira (prpr/src/core/shaders), keyed by Phira name.
-const files = import.meta.glob<string>('./presets/*.glsl', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-});
+const BASE = `${import.meta.env.BASE_URL}assets/shaders/`;
 
-export const PRESET_SHADERS: Record<string, string> = Object.fromEntries(
-  Object.entries(files).map(([path, source]) => [path.replace(/^.*\/|\.glsl$/g, ''), source]),
+// Preset shaders mirrored from Phira (prpr/src/core/shaders), keyed by Phira name.
+export const PHIRA_NAMES = [
+  'chromatic',
+  'circleBlur',
+  'fisheye',
+  'glitch',
+  'grayscale',
+  'noise',
+  'pixel',
+  'radialBlur',
+  'shockwave',
+  'vignette',
+];
+
+// Extra presets: PhiEdit's Phira ports ('color_shift_pr.glsl' → 'colorShift'). Phira lacks them,
+// so RPE exports bundle them as '/<file>'.
+const EXTRA_FILES = [
+  'bokeh_pr',
+  'burn_pr',
+  'camera_pr',
+  'color_shift_pr',
+  'distortion_pr',
+  'emboss_pr',
+  'flare_pr',
+  'flip_pr',
+  'flowing_pr',
+  'fog_pr',
+  'glow_effect_pr',
+  'heat_distortion_pr',
+  'hologram_pr',
+  'image_noise_pr',
+  'kaleidoscope_pr',
+  'lightning_pr',
+  'liquid_pr',
+  'neon_pr',
+  'night_vision_pr',
+  'oil_painting_pr',
+  'old_tv_pr',
+  'rain_pr',
+  'rainbow_pr',
+  'rays_pr',
+  'scanline_pr',
+  'snow_pr',
+  'sobel_pr',
+  'two_tone_pr',
+  'underwater_pr',
+  'wave_pr',
+];
+
+const baseName = (path: string) => path.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '');
+const camel = (s: string) => s.replace(/_(\w)/g, (_, c: string) => c.toUpperCase());
+
+// Extra preset name → extra.json path ('/bokeh_pr.glsl').
+const EXTRA_PATHS: Record<string, string> = Object.fromEntries(
+  EXTRA_FILES.map((file) => [camel(file.replace(/_pr$/, '')), `/${file}.glsl`]),
 );
 
-export const PRESET_NAMES = Object.keys(PRESET_SHADERS);
+export const EXTRA_NAMES = Object.keys(EXTRA_PATHS);
+export const PRESET_NAMES = [...PHIRA_NAMES, ...EXTRA_NAMES];
+
+// Filled by loadPresetShaders().
+export const PRESET_SHADERS: Record<string, string> = {};
+
+let loading: Promise<void> | null = null;
+
+// Loaded once; await before reading presets.
+export function loadPresetShaders() {
+  const fetchInto = async (name: string, url: string) => {
+    const res = await fetch(url);
+    if (res.ok) PRESET_SHADERS[name] = await res.text();
+  };
+  loading ??= Promise.all([
+    ...PHIRA_NAMES.map((name) => fetchInto(name, `${BASE}phira/${name}.glsl`)),
+    ...Object.entries(EXTRA_PATHS).map(([name, path]) => fetchInto(name, `${BASE}extra${path}`)),
+  ])
+    .catch(() => undefined)
+    .then(() => undefined);
+  return loading;
+}
+
+// Shader name as written to extra.json: extra presets become their bundled file.
+export const rpeShader = (shader: string) => EXTRA_PATHS[shader] ?? shader;
+
+const EXTRA_BY_PATH = new Map(Object.entries(EXTRA_PATHS).map(([name, path]) => [path, name]));
+
+// Source of a bundled extra preset by extra.json path ('/bokeh_pr.glsl').
+export const bundledShader = (path: string) => {
+  const name = EXTRA_BY_PATH.get(path);
+  return name ? PRESET_SHADERS[name] : undefined;
+};
+
+// 'bokeh_pr', 'Bokeh' or 'heatDistortion' all match their extra preset.
+const matchKey = (name: string) => name.replace(/_pr$/i, '').replace(/_/g, '').toLowerCase();
+const EXTRA_KEYS = new Map(EXTRA_NAMES.map((name) => [matchKey(name), name]));
+
+// Imported extra.json shader: the matching extra preset, else unchanged.
+export const nativeShader = (shader: string) =>
+  EXTRA_KEYS.get(matchKey(baseName(shader))) ?? shader;
 
 export const SHADER_ACCEPT = '.glsl,.frag,.txt';
 

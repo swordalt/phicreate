@@ -32,176 +32,41 @@ const GLOW_WEIGHTS = [0.458568, 0.282861, 0.156589, 0.073059, 0.024948];
 // Covers mask wobble plus the glow rings.
 const MARGIN = 0.12;
 
-const VERT = `#version 300 es
-in vec2 position;
-out vec2 uv;
-void main() {
-  uv = position * 0.5 + 0.5;
-  gl_Position = vec4(position, 0.0, 1.0);
-}`;
+const BASE = `${import.meta.env.BASE_URL}assets/shaders/noise/`;
 
-const HEADER = `#version 300 es
-precision highp float;
-in vec2 uv;
-out vec4 o;
-`;
+// Fragment programs, each built from shared header / helper chunks plus its own file.
+const PROGRAMS = {
+  fill: ['header', 'fill'],
+  paint: ['header', 'paint'],
+  compose: ['header', 'displace', 'compose'],
+  glow: ['header', 'glow'],
+  final: ['header', 'displace', 'final'],
+} as const;
 
-// Two lookups scrolling along DIR and its normal: xy = offset, z = average.
-const DISPLACE = `
-const vec2 DIR = vec2(0.70710678);
-vec3 displace(sampler2D map, vec2 p, float shift) {
-  vec2 n = vec2(-DIR.y, DIR.x);
-  float a = texture(map, p + DIR * shift).r;
-  float b = texture(map, p + n * shift).r;
-  return vec3(DIR * (a - 0.5) + n * (b - 0.5), (a + b) * 0.5);
-}
-`;
+type ProgramName = keyof typeof PROGRAMS;
 
-const FILL_FRAG = `${HEADER}
-void main() { o = vec4(1.0); }`;
-
-const PAINT_FRAG = `${HEADER}
-uniform vec4 color;
-void main() { o = color; }`;
-
-// Normal union XOR subtract parity, wobbled for active fields.
-const COMPOSE_FRAG = `${HEADER}${DISPLACE}
-uniform sampler2D mask;
-uniform sampler2D displaceMap;
-uniform vec4 frame;
-uniform float time;
-uniform float wobble;
-void main() {
-  vec2 f = (uv - frame.xy) / frame.zw;
-  vec3 d = displace(displaceMap, f * vec2(2.13, 1.02), time / 20.0 * 2.59);
-  vec2 m = texture(mask, uv + d.xy * 0.1 * frame.zw * wobble).rg;
-  o = vec4(abs(m.r - m.g), 0.0, 0.0, 1.0);
-}`;
-
-// One dilation ring: r = dilated coverage, g = weighted glow outside, b = first ring (edge).
-const GLOW_FRAG = `${HEADER}
-uniform sampler2D prev;
-uniform sampler2D compose;
-uniform vec2 texel;
-uniform float weight;
-uniform float first;
-void main() {
-  vec4 c = texture(prev, uv);
-  float d = c.r;
-  for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++) d = max(d, texture(prev, uv + vec2(x, y) * texel).r);
-  float inside = texture(compose, uv).r;
-  float ring = clamp(d - c.r, 0.0, 1.0) * (1.0 - inside);
-  float glow = clamp(ring * weight + c.g * (1.0 - first), 0.0, 1.0);
-  float edge = first > 0.5 ? clamp(d - inside, 0.0, 1.0) : c.b;
-  o = vec4(d, glow, edge, 1.0);
-}`;
-
-const FINAL_FRAG = `${HEADER}${DISPLACE}
-uniform sampler2D scene;
-uniform sampler2D activeMask;
-uniform sampler2D readyMask;
-uniform sampler2D disabledMask;
-uniform sampler2D effect;
-uniform sampler2D displaceMap;
-uniform sampler2D sparkMap;
-uniform sampler2D colorMap;
-uniform float colored;
-uniform vec2 screen;
-uniform vec2 effectSize;
-uniform vec4 frame;
-uniform float unit;
-uniform float time;
-
-const vec3 FILL = vec3(0.713, 0.235, 0.235);
-const vec3 EDGE = vec3(1.0, 0.330, 0.330);
-const vec3 GLOW = vec3(1.0, 0.179, 0.179);
-const vec3 SPARK = vec3(1.0, 0.285, 0.285);
-const vec3 DISABLED_FILL = vec3(0.497, 0.138, 0.138);
-const vec3 DISABLED_SPARK = vec3(0.311, 0.078, 0.078);
-const vec3 RED = vec3(1.0, 84.0 / 255.0, 84.0 / 255.0);
-
-// Field tint at uv (premultiplied by coverage, so divide).
-vec3 tintAt(vec2 p) {
-  if (colored < 0.5) return RED;
-  vec4 c = texture(colorMap, p);
-  return c.a > 0.001 ? c.rgb / c.a : RED;
+interface Sources {
+  vertex: string;
+  fragments: Record<ProgramName, string>;
 }
 
-// Moves a native red shade to rgb's hue, keeping its value and saturation (Phira).
-vec3 palette(vec3 native, vec3 rgb) {
-  if (all(lessThan(abs(rgb - RED), vec3(0.001)))) return native;
-  float high = max(rgb.r, max(rgb.g, rgb.b));
-  float low = min(rgb.r, min(rgb.g, rgb.b));
-  float delta = high - low;
-  if (delta < 0.00001) return vec3(native.r * high);
-  vec3 hue = (rgb - low) / delta;
-  float sat = (1.0 - native.g / max(native.r, 0.00001)) * (delta / max(high, 0.00001)) / (1.0 - 84.0 / 255.0);
-  return native.r * high * mix(vec3(1.0), hue, clamp(sat, 0.0, 1.0));
+let sources: Sources | null = null;
+let loading: Promise<void> | null = null;
+
+function loadSources() {
+  const chunk = (name: string) =>
+    fetch(`${BASE}${name}.glsl`).then((r) => (r.ok ? r.text() : Promise.reject(new Error(name))));
+  loading ??= (async () => {
+    const names = ['vertex', 'header', 'displace', 'fill', 'paint', 'compose', 'glow', 'final'];
+    const texts = await Promise.all(names.map(chunk));
+    const files = Object.fromEntries(names.map((n, i) => [n, texts[i]]));
+    const fragments = {} as Record<ProgramName, string>;
+    for (const [name, parts] of Object.entries(PROGRAMS))
+      fragments[name as ProgramName] = parts.map((p) => files[p]).join('\n');
+    sources = { vertex: files.vertex, fragments };
+  })().catch((e) => console.error('Noise shaders failed to load', e));
+  return loading;
 }
-
-vec3 rgb2hsv(vec3 c) {
-  vec4 k = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-  vec4 p = mix(vec4(c.bg, k.wz), vec4(c.gb, k.xy), step(c.b, c.g));
-  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-  float d = q.x - min(q.w, q.y);
-  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
-}
-
-vec3 hsv2rgb(vec3 c) {
-  vec3 p = clamp(abs(fract(c.x + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
-  return c.z * mix(vec3(1.0), p, c.y);
-}
-
-vec3 overlay(vec3 base, vec3 blend) {
-  vec3 lo = 2.0 * base * blend;
-  vec3 hi = 1.0 - 2.0 * (1.0 - base) * (1.0 - blend);
-  return clamp(mix(lo, hi, step(0.5, base)), 0.0, 1.0);
-}
-
-void main() {
-  vec4 base = texture(scene, uv);
-  vec2 f = (uv - frame.xy) / frame.zw;
-  float covered = texture(activeMask, uv).r;
-  float ready = texture(readyMask, uv).r;
-  float disabled = texture(disabledMask, uv).r * (1.0 - covered) * (1.0 - ready);
-  vec3 rgb = tintAt(uv);
-
-  // Disabled: dim fill with faint sparks, added on top.
-  if (disabled > 0.0) {
-    vec3 d = displace(displaceMap, f * vec2(0.5, 0.2), time / 20.0 * 0.3);
-    float spark = texture(sparkMap, f * vec2(3.0, 1.2) + d.xy * 2.29).r;
-    vec3 add = palette(DISABLED_FILL, rgb) * 0.4 + spark * palette(DISABLED_SPARK, rgb) * d.z * 3.5;
-    base = vec4(base.rgb + add * disabled, max(base.a, disabled));
-  }
-
-  float edge = texture(effect, (floor(uv * effectSize) + 0.5) / effectSize).b;
-  float glow = texture(effect, uv).g;
-  float body = covered + edge;
-  vec3 color = vec3(0.0);
-  float alpha = 0.0;
-  if (body + glow > 1e-4) {
-    // Pixelated, displaced scene behind the fill.
-    vec2 px = 6.0 * unit / screen;
-    vec2 cell = (floor(uv / px) + 0.5) * px;
-    vec2 cf = (cell - frame.xy) / frame.zw;
-    vec3 d = displace(displaceMap, cf * vec2(0.8, 0.3), time / 20.0 * 1.5);
-    vec3 sc = texture(scene, cell + d.xy * 0.15 * frame.zw).rgb;
-    float spark = texture(sparkMap, f * vec2(3.0, 1.2) + d.xy * 2.39).r;
-    vec3 sparks = spark * palette(SPARK, rgb) * d.z * 5.69;
-    vec3 hsv = rgb2hsv(sc) + sparks * 0.2;
-    vec3 tinted = overlay(hsv2rgb(hsv), sparks);
-    vec3 fill = mix(palette(FILL - d.z * 0.411, rgb), tinted, 0.667);
-    float halo = glow * (1.0 - body);
-    color = fill * covered + palette(EDGE, rgb) * edge * 0.8 + palette(GLOW, rgb) * halo * 0.8;
-    alpha = covered * 0.667 + edge * 0.8 + halo * 0.8;
-  }
-  // Ready: flickering shine.
-  color += vec3(0.12) * (sin(time * 37.9) * 0.5 + 1.0) * ready * ready;
-
-  vec4 outc = vec4(color + base.rgb * (1.0 - alpha), alpha + base.a * (1.0 - alpha));
-  o = vec4(min(outc.rgb, vec3(outc.a)), clamp(outc.a, 0.0, 1.0));
-}`;
 
 interface Program {
   program: WebGLProgram;
@@ -221,7 +86,7 @@ const TEXTURE_BASE = `${import.meta.env.BASE_URL}assets/phigros/Texture/Noise/`;
 class NoiseEffect {
   readonly canvas = document.createElement('canvas');
   private gl: WebGL2RenderingContext | null;
-  private programs: Record<'fill' | 'paint' | 'compose' | 'glow' | 'final', Program> | null = null;
+  private programs: Record<ProgramName, Program> | null = null;
   private quad: WebGLBuffer | null = null;
   private shapes: WebGLBuffer | null = null;
   private scene: WebGLTexture | null = null;
@@ -232,7 +97,7 @@ class NoiseEffect {
   private effects: Target[] = [];
   private colors: Target[] = [];
 
-  constructor() {
+  constructor(private sources: Sources) {
     this.gl = this.canvas.getContext('webgl2', {
       alpha: true,
       premultipliedAlpha: true,
@@ -244,11 +109,11 @@ class NoiseEffect {
     if (!gl) return;
     try {
       this.programs = {
-        fill: this.link(FILL_FRAG),
-        paint: this.link(PAINT_FRAG),
-        compose: this.link(COMPOSE_FRAG),
-        glow: this.link(GLOW_FRAG),
-        final: this.link(FINAL_FRAG),
+        fill: this.link(sources.fragments.fill),
+        paint: this.link(sources.fragments.paint),
+        compose: this.link(sources.fragments.compose),
+        glow: this.link(sources.fragments.glow),
+        final: this.link(sources.fragments.final),
       };
     } catch (e) {
       console.error(e);
@@ -279,7 +144,7 @@ class NoiseEffect {
       return shader;
     };
     const program = gl.createProgram()!;
-    gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, this.sources.vertex));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
     gl.bindAttribLocation(program, 0, 'position');
     gl.linkProgram(program);
@@ -586,14 +451,19 @@ function expand(q: DevicePoint[], d: number): DevicePoint[] {
 
 let effect: NoiseEffect | null = null;
 
-// False when WebGL 2 is unavailable (caller falls back to the simplified look).
+// False when WebGL 2 is unavailable or the shaders are still loading (caller falls back to the
+// simplified look).
 export function renderNoiseEffect(
   ctx: CanvasRenderingContext2D,
   groups: Record<NoisePhase, NoiseShapes>,
   frame: NoiseFrame,
   time: number,
 ) {
-  effect ??= new NoiseEffect();
+  if (!sources) {
+    void loadSources();
+    return false;
+  }
+  effect ??= new NoiseEffect(sources);
   if (!effect.supported) return false;
   effect.render(ctx, groups, frame, time);
   return true;

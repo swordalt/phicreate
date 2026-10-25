@@ -266,7 +266,7 @@ export const removeEffect = (chart: Chart, effectId: Id): Chart => ({
   effects: chart.effects.filter((e) => e.id !== effectId),
 });
 
-export type EffectPatch = Partial<Pick<ShaderEffect, 'name' | 'shader' | 'global' | 'order'>>;
+export type EffectPatch = Partial<Pick<ShaderEffect, 'name' | 'shader' | 'order'>>;
 
 export const patchEffect = (chart: Chart, effectId: Id, patch: EffectPatch) =>
   mapEffect(chart, effectId, (e) => ({ ...e, ...patch }));

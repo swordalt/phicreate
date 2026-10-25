@@ -1,5 +1,6 @@
-import { parseUniforms, PRESET_SHADERS, uniformKeys } from '@/features/shaders/library';
+import { parseUniforms, PRESET_SHADERS, rpeShader, uniformKeys } from '@/features/shaders/library';
 import { cmp, fromFloat, toFloat, ZERO } from '../../model/beat';
+import { isGlobalRange } from '../../model/defaults';
 import { ease } from '../../model/easing';
 import { beatToSeconds } from '../../model/timing';
 import {
@@ -388,8 +389,8 @@ function effectEntries(
     return {
       start: rpeBeat(range.start),
       end: rpeBeat(range.end),
-      shader: effect.shader,
-      global: effect.global,
+      shader: rpeShader(effect.shader),
+      global: isGlobalRange(range),
       order: effect.order,
       vars,
     };

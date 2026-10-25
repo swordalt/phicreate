@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { add, cmp, fromFloat, sub, toFloat, ZERO } from '@/features/chart/model/beat';
 import { beatToSeconds } from '@/features/chart/model/timing';
-import { NOISE_READY_FLASH } from '@/features/chart/model/defaults';
+import { isGlobalRange, NOISE_READY_FLASH } from '@/features/chart/model/defaults';
 import {
   isNoise,
   isShader,
@@ -11,6 +11,7 @@ import {
   type Chart,
   type Event,
   type EventItem,
+  type NumEvent,
   type TrackKey,
 } from '@/features/chart/model/types';
 import {
@@ -128,9 +129,21 @@ export function EventGrid() {
     const selected = new Set(editor.selectedEventIds);
     const moving = drag?.kind === 'move' ? new Set(drag.ids) : null;
 
-    for (const { event, column } of events) {
+    // Shader ranges show their scope instead of 0 / 1.
+    const scope = (channel: TrackKey, e: Event<unknown>) =>
+      isShader(owner) && channel === 'active'
+        ? isGlobalRange(e as NumEvent)
+          ? 'global'
+          : 'chart'
+        : undefined;
+
+    for (const { event, column, channel } of events) {
       if (moving?.has(event.id) || (drag?.kind === 'resize' && drag.id === event.id)) continue;
-      drawEvent(ctx, g, cols, column, event, { selected: selected.has(event.id), curve });
+      drawEvent(ctx, g, cols, column, event, {
+        selected: selected.has(event.id),
+        curve,
+        label: scope(channel, event),
+      });
     }
 
     const hover = hoverRef.current;
@@ -147,9 +160,17 @@ export function EventGrid() {
 
     if (drag?.kind === 'move') {
       const dBeat = toFloat(drag.dBeat);
-      for (const { event, column } of events) {
+      for (const { event, column, channel } of events) {
         if (moving!.has(event.id))
-          drawEvent(ctx, g, cols, column, event, { selected: true, curve }, dBeat);
+          drawEvent(
+            ctx,
+            g,
+            cols,
+            column,
+            event,
+            { selected: true, curve, label: scope(channel, event) },
+            dBeat,
+          );
       }
     } else if (drag?.kind === 'resize') {
       const found = events.find((x) => x.event.id === drag.id);
@@ -157,6 +178,7 @@ export function EventGrid() {
         drawEvent(ctx, g, cols, found.column, resized(found.event, drag), {
           selected: true,
           curve,
+          label: scope(found.channel, found.event),
         });
     } else if (drag?.kind === 'box') {
       const left = (c: number) => g.x0 + c * w;
@@ -441,8 +463,8 @@ function createEvent(column: number, start: Beat, end: Beat, locked = false) {
     // Plays from the media's beginning.
     item = { channel, event: { ...base, from: 0, to: 0, locked: true } };
   } else if (channel === 'active') {
-    // Noise fields: `from` is the ready flash length.
-    const v = isNoise(owner) ? NOISE_READY_FLASH : 1;
+    // Noise fields: `from` is the ready flash length; shaders: 0 = chart only.
+    const v = isNoise(owner) ? NOISE_READY_FLASH : 0;
     item = { channel, event: { ...base, from: v, to: v, locked: true } };
   } else if (channel === 'visible') {
     item = { channel, event: { ...base, from: 1, to: 1, locked: true } };

@@ -38,6 +38,8 @@ interface EventStyle {
   ghost?: boolean;
   // Easing curve inside the block.
   curve?: boolean;
+  // Replaces the value text.
+  label?: string;
 }
 
 export function drawEvent(
@@ -46,7 +48,7 @@ export function drawEvent(
   columns: EventColumn[],
   column: number,
   e: Pick<Event<EventValue>, 'start' | 'end' | 'from' | 'to' | 'easing' | 'locked'>,
-  { selected, ghost, curve = true }: EventStyle = {},
+  { selected, ghost, curve = true, label }: EventStyle = {},
   dBeat = 0,
 ) {
   const r = eventRect(g, columns, column, toFloat(e.start) + dBeat, toFloat(e.end) + dBeat);
@@ -100,9 +102,13 @@ export function drawEvent(
     }
     ctx.font = '11px ui-monospace, Consolas, monospace';
     ctx.textAlign = 'left';
-    if (e.locked || (typeof e.from !== 'number' && formatValue(e.from) === formatValue(e.to))) {
+    if (
+      label ||
+      e.locked ||
+      (typeof e.from !== 'number' && formatValue(e.from) === formatValue(e.to))
+    ) {
       ctx.textBaseline = 'middle';
-      ctx.fillText(formatValue(e.from), r.left + 4, r.top + h / 2, w - 8);
+      ctx.fillText(label ?? formatValue(e.from), r.left + 4, r.top + h / 2, w - 8);
     } else if (h > 30) {
       ctx.textBaseline = 'bottom';
       ctx.fillText(formatValue(e.from), r.left + 4, r.bottom - 3, w - 8);

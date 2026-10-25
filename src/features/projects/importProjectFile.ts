@@ -1,6 +1,7 @@
 import { strFromU8 } from 'fflate';
 import { isOfficialChart } from '@/features/chart/io/official/types';
 import { isRpeChart } from '@/features/chart/io/rpe/types';
+import { loadPresetShaders } from '@/features/shaders/library';
 import { unzipAsync } from '@/lib/zip';
 import { PROJECT_FILE } from './exportProject';
 import { fromExport } from './projectFactory';
@@ -60,6 +61,8 @@ function phicreatePackage(files: Record<string, Uint8Array>): ImportResult | nul
 
 // PhiCreate, RPE or official JSON, or a PhiCreate / PEZ / ZIP package.
 export async function importProjectFile(file: File): Promise<ImportResult | null> {
+  // extra.json effects read preset sources.
+  await loadPresetShaders();
   if (!/\.(json|pec)$/i.test(file.name)) {
     let files: Record<string, Uint8Array>;
     try {

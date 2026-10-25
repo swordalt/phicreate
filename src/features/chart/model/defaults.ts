@@ -75,28 +75,26 @@ export const createEffect = (name: string, shader = 'chromatic'): ShaderEffect =
   name,
   shader,
   active: [],
-  global: false,
   order: 0,
   vars: {},
 });
 
-// Shader run range (an `active` event).
-export const createActiveEvent = (start: Beat, end: Beat): NumEvent => ({
+// Visible / active ranges hold 1 / the ready flash seconds.
+export const createRangeEvent = (start: Beat, end: Beat, value = 1): NumEvent => ({
   id: createId(),
   start,
   end,
-  from: 1,
-  to: 1,
+  from: value,
+  to: value,
   easing: { kind: 'preset', id: 1 },
   locked: true,
 });
 
-// Visible / active ranges hold 1 / the ready flash seconds.
-export const createRangeEvent = (start: Beat, end: Beat, value = 1): NumEvent => ({
-  ...createActiveEvent(start, end),
-  from: value,
-  to: value,
-});
+// Shader run range (an `active` event); global ones cover the UI too.
+export const createActiveEvent = (start: Beat, end: Beat, global = false): NumEvent =>
+  createRangeEvent(start, end, Number(global));
+
+export const isGlobalRange = (e: NumEvent) => e.from === 1;
 
 export const NOISE_READY_FLASH = 0.5;
 
@@ -238,10 +236,16 @@ export const createNote = (note: Pick<Note, 'type' | 'beat'> & Partial<Note>): N
   ...note,
 });
 
-// Effects from before `active` had one start / end range.
-function withEffectDefaults(e: ShaderEffect & { start?: Beat; end?: Beat }): ShaderEffect {
-  const { start, end, ...rest } = e;
-  const active = rest.active ?? (start && end ? [createActiveEvent(start, end)] : []);
+// Effects from before `active` had one start / end range, or an object-wide `global`.
+function withEffectDefaults(
+  e: ShaderEffect & { start?: Beat; end?: Beat; global?: boolean },
+): ShaderEffect {
+  const { start, end, global, ...rest } = e;
+  let active = rest.active ?? (start && end ? [createActiveEvent(start, end)] : []);
+  if (global !== undefined) {
+    const v = Number(global);
+    active = active.map((r) => ({ ...r, from: v, to: v, locked: true }));
+  }
   return { ...createEffect(e.name, e.shader), ...rest, active };
 }
 

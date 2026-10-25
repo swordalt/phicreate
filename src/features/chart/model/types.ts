@@ -129,10 +129,8 @@ export interface ShaderEffect {
   name: string;
   // Preset name (e.g. 'chromatic') or a custom file as '/name.glsl'.
   shader: string;
-  // Ranges the shader runs in; values unused (locked 1).
+  // Ranges the shader runs in; locked 1 covers the UI too (global), 0 the chart only.
   active: NumEvent[];
-  // Covers the UI too, not just the chart.
-  global: boolean;
   // Lower renders first.
   order: number;
   // Uniform tracks by var key: `power`, or a vector component like `offset.x` / `color.r`.

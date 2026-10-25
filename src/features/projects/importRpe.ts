@@ -15,6 +15,7 @@ import { pecToChart } from '@/features/chart/io/pec/fromPec';
 import { rpeToChart, type RpeImportOptions } from '@/features/chart/io/rpe/fromRpe';
 import { markerKind, pngSize } from '@/features/chart/io/rpe/markers';
 import { isRpeChart, rpeTexture, type RpeChart } from '@/features/chart/io/rpe/types';
+import { isCustomShader, loadPresetShaders, nativeShader } from '@/features/shaders/library';
 import {
   PROJECT_SCHEMA_VERSION,
   type ImportResult,
@@ -251,6 +252,7 @@ export async function importChartPackage(file: Blob): Promise<ImportResult | nul
   } catch {
     return null;
   }
+  await loadPresetShaders();
   return importChartFiles(files);
 }
 
@@ -334,7 +336,7 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
     if (size) markerSizes[name] = size;
   }
 
-  // extra.json: video files, then custom shaders ('/name.glsl') for effects.
+  // extra.json: video files, then custom shaders ('/name.glsl') that aren't extra presets.
   const extraPath = paths.find((p) => /(^|\/)extra\.json$/i.test(p));
   const extraData = extraPath ? parseJson(files[extraPath]) : null;
   const extra = isRpeExtra(extraData) ? extraData : undefined;
@@ -346,7 +348,8 @@ export function importChartFiles(files: Record<string, Uint8Array>): ImportResul
   const shaders: ShaderSources = {};
   for (const effect of extra?.effects ?? []) {
     const shader = effect?.shader;
-    if (typeof shader !== 'string' || !shader.startsWith('/') || shader in shaders) continue;
+    if (typeof shader !== 'string' || !isCustomShader(shader) || shader in shaders) continue;
+    if (nativeShader(shader) !== shader) continue;
     const path = find(shader.slice(1));
     if (path) shaders[shader] = strFromU8(files[path]);
   }

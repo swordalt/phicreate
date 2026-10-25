@@ -73,6 +73,8 @@ export function EventProperties() {
   const startsOnly = selected.every((x) => x.channel === 'start');
   // Noise field active ranges keep the ready flash length in `from`.
   const flashes = isNoise(owner) && selected.every((x) => x.channel === 'active');
+  // Shader active ranges: 1 = covers the UI too.
+  const scopes = isShader(owner) && selected.every((x) => x.channel === 'active');
   const colors = selected.flatMap((x) => (x.channel === 'color' ? [x.event] : []));
   const events: Event<number | string | Color>[] = [...nums, ...texts, ...fonts, ...colors];
   const fontsOnly = fonts.length === events.length;
@@ -223,6 +225,20 @@ export function EventProperties() {
         </>
       )}
       {flashes && field('from', 'Ready flash (s)')}
+      {scopes && (
+        <Check
+          label="Cover UI (global)"
+          checked={shared((e) => e.from === 1) ?? false}
+          onChange={(global) => {
+            const v = Number(global);
+            update(
+              (e) => ({ ...e, from: v, to: v }),
+              (e) => e,
+              (e) => e,
+            );
+          }}
+        />
+      )}
       {fontsOnly && (
         <Row label="Font">
           <select

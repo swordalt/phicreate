@@ -15,17 +15,20 @@ export const NO_PASSES: ActivePasses = { chart: [], global: [] };
 export function activePasses(chart: Chart, t: number): ActivePasses {
   const out: ActivePasses = { chart: [], global: [] };
   const active = chart.effects
-    .map((effect, i) => ({ effect, i, runtime: effectRuntime(effect, chart.bpmList) }))
-    .filter(({ runtime }) => runtime.isActive(t))
+    .map((effect, i) => {
+      const runtime = effectRuntime(effect, chart.bpmList);
+      return { effect, i, runtime, range: runtime.rangeAt(t) };
+    })
+    .filter(({ range }) => range)
     .sort((a, b) => a.effect.order - b.effect.order || a.i - b.i);
-  for (const { effect, runtime } of active) {
+  for (const { effect, runtime, range } of active) {
     const source = shaderSource(effect.shader);
     if (!source) continue;
     const uniforms: ShaderPass['uniforms'] = {};
     for (const u of shaderUniforms(effect.shader)) {
       uniforms[u.name] = uniformKeys(u).map((key, k) => runtime.varValue(key, t, u.value[k]));
     }
-    (effect.global ? out.global : out.chart).push({ source, uniforms });
+    (range!.global ? out.global : out.chart).push({ source, uniforms });
   }
   return out;
 }

@@ -5,7 +5,7 @@ import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { clearLibrary, loadLibrary, useLibraryStore } from '@/features/library/useLibraryStore';
 import { projectRepo } from '@/features/projects/projectRepo';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
-import { setCustomShaders } from '@/features/shaders/library';
+import { loadPresetShaders, setCustomShaders } from '@/features/shaders/library';
 import { Toolbar } from '@/features/editor/Toolbar/Toolbar';
 import { EditorGrid } from '@/features/editor/EditorGrid/EditorGrid';
 import { Footer } from '@/features/editor/Footer/Footer';
@@ -44,7 +44,8 @@ export function EditorPage() {
     let cancelled = false;
     const unsubFonts = useLibraryStore.subscribe((s) => syncFonts(s.fonts));
     setState({ status: 'loading' });
-    void projectRepo.get(projectId).then((project) => {
+    // Presets are read synchronously while editing.
+    void Promise.all([projectRepo.get(projectId), loadPresetShaders()]).then(([project]) => {
       if (cancelled) return;
       if (!project) return setState({ status: 'missing' });
       useChartStore.getState().load(projectId, project.chart);

@@ -1,6 +1,7 @@
 import { strToU8, type Zippable } from 'fflate';
 import { chartToOfficial, type FakeNotes } from '@/features/chart/io/official/toOfficial';
 import { chartToRpe } from '@/features/chart/io/rpe/toRpe';
+import { bundledShader, loadPresetShaders } from '@/features/shaders/library';
 import { downloadBlob, toSafeFilename } from '@/lib/file';
 import { zipAsync } from '@/lib/zip';
 import { toExport } from './projectFactory';
@@ -104,6 +105,7 @@ async function rpePackage(project: Project, options: ExportOptions) {
   const [media, shaders] = await Promise.all([
     project.media ?? projectRepo.getMedia(id),
     project.shaders ?? projectRepo.getShaders(id),
+    loadPresetShaders(),
   ]);
   const unique = namer();
   const { files, add, song, picture } = await packageFiles(project, unique);
@@ -128,7 +130,7 @@ async function rpePackage(project: Project, options: ExportOptions) {
   if (extra) {
     files['extra.json'] = json(extra);
     for (const effect of extra.effects ?? []) {
-      const source = shaders[effect.shader];
+      const source = shaders[effect.shader] ?? bundledShader(effect.shader);
       const path = effect.shader.slice(1);
       if (source && !(path in files)) files[path] = strToU8(source);
     }

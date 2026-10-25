@@ -1,6 +1,7 @@
 import { createId } from '@/lib/id';
 import {
   componentNames,
+  nativeShader,
   parseUniforms,
   PRESET_SHADERS,
   uniformKeys,
@@ -123,8 +124,9 @@ const hold = (start: Beat, end: Beat, value: number): Omit<NumEvent, 'id'> => ({
   locked: true,
 });
 
-// Merges effects into one object per shader (and global / order); beats move from the
-// extra's BPM list onto the chart's. `sources` holds custom shaders for var defaults.
+// Merges effects into one object per shader (and order), global per range; beats move from
+// the extra's BPM list onto the chart's. Extra presets replace their bundled files.
+// `sources` holds custom shaders for var defaults.
 export function extraToEffects(
   extra: RpeExtra,
   chartBpm: BpmPoint[],
@@ -141,21 +143,21 @@ export function extraToEffects(
 
   for (const src of extra.effects ?? []) {
     if (!src || typeof src.shader !== 'string') continue;
-    const global = !!src.global;
+    const shader = nativeShader(src.shader);
     const order = num(src.order);
-    const id = `${src.shader}|${global}|${order}`;
+    const id = `${shader}|${order}`;
     let group = groups.get(id);
     if (!group) {
-      const base = src.shader.replace(/^.*\//, '').replace(/\.glsl$/i, '') || 'Shader';
-      const name = `${base}${global ? ' (global)' : ''}${order ? ` #${order}` : ''}`;
-      group = { effect: { ...createEffect(name, src.shader), global, order }, ranges: [] };
+      const base = shader.replace(/^.*\//, '').replace(/\.glsl$/i, '') || 'Shader';
+      const name = `${base}${order ? ` #${order}` : ''}`;
+      group = { effect: { ...createEffect(name, shader), order }, ranges: [] };
       groups.set(id, group);
     }
     const { effect } = group;
     const start = convert(src.start);
     let end = convert(src.end);
     if (cmp(end, start) <= 0) end = add(start, MIN_LENGTH);
-    effect.active.push(createActiveEvent(start, end));
+    effect.active.push(createActiveEvent(start, end, !!src.global));
     const keys = new Set<string>();
     group.ranges.push({ start, end, keys });
 

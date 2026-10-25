@@ -1,4 +1,5 @@
 import { toFloat } from '../model/beat';
+import { isGlobalRange } from '../model/defaults';
 import { ease, isLinear } from '../model/easing';
 import { beatToSeconds } from '../model/timing';
 import {
@@ -588,7 +589,7 @@ export const sampleMedia = (chart: Chart, t: number, sample: Sampler) =>
 
 export class EffectRuntime {
   // Active ranges in seconds, sorted.
-  private ranges: { start: number; end: number }[];
+  private ranges: { start: number; end: number; global: boolean }[];
   private tracks = new Map<string, Track>();
 
   constructor(
@@ -599,6 +600,7 @@ export class EffectRuntime {
       .map((e) => ({
         start: beatToSeconds(bpmList, toFloat(e.start)),
         end: beatToSeconds(bpmList, toFloat(e.end)),
+        global: isGlobalRange(e),
       }))
       .sort((a, b) => a.start - b.start);
     for (const [key, events] of Object.entries(effect.vars)) {
@@ -609,9 +611,14 @@ export class EffectRuntime {
     }
   }
 
-  isActive(t: number) {
+  // Null when inactive; global ranges cover the UI too.
+  rangeAt(t: number) {
     const i = lastAtOrBefore(this.ranges, t, (r) => r.start);
-    return i >= 0 && t < this.ranges[i].end;
+    return i >= 0 && t < this.ranges[i].end ? this.ranges[i] : null;
+  }
+
+  isActive(t: number) {
+    return !!this.rangeAt(t);
   }
 
   // `fallback` (the uniform default) applies to tracks without events.
