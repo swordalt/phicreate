@@ -23,6 +23,7 @@ import {
   type MediaObject,
   type NoiseField,
 } from '@/features/chart/model/types';
+import { HOLD_Z, NOTE_Z } from '@/features/chart/model/zOrder';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { fileName, withExt } from '@/features/library/fileNames';
 import { useLibraryStore } from '@/features/library/useLibraryStore';
@@ -147,6 +148,7 @@ export function ObjectProperties() {
               <CommitInput
                 value={String(placed.zOrder)}
                 inputMode="decimal"
+                title={`Higher draws on top. Holds draw above ${HOLD_Z}, other notes above ${NOTE_Z}; equal values keep list order.`}
                 onCommit={number('zOrder')}
               />
             </Row>

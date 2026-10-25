@@ -1,6 +1,7 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/features/chart/model/defaults';
 import { toCss } from '@/features/chart/model/color';
-import type { Chart, MediaFit, TextObject } from '@/features/chart/model/types';
+import type { Chart, JudgeLine, MediaFit, TextObject } from '@/features/chart/model/types';
+import { drawOrder, HOLD_Z, NOTE_Z, type Drawable } from '@/features/chart/model/zOrder';
 import {
   createSampler,
   isNoteVisible,
@@ -108,6 +109,13 @@ function coverRect(img: { width: number; height: number }, aspect: number) {
 }
 
 const NO_IDS = new Set<string>();
+const depthCache = new WeakMap<Chart, Drawable[]>();
+
+function depthOrder(chart: Chart) {
+  let order = depthCache.get(chart);
+  if (!order) depthCache.set(chart, (order = drawOrder(chart)));
+  return order;
+}
 const simultaneousCache = new WeakMap<Chart, Set<string>>();
 
 // Notes sharing a hit time with another note get highlight textures.
@@ -182,10 +190,10 @@ export function drawPreview(
   }
 
   const sample = createSampler(chart, t);
-  const order = chart.lines
-    .map((line, i) => ({ line, i }))
-    .filter(({ line }) => !hiddenLines?.has(line.id))
-    .sort((a, b) => a.line.zOrder - b.line.zOrder || a.i - b.i);
+  const layers = depthOrder(chart);
+  const order = layers.flatMap((d) =>
+    d.kind === 'line' && !hiddenLines?.has(d.object.id) ? [{ line: d.object, i: d.index }] : [],
+  );
   const highlight = highlightSimultaneous ? simultaneous(chart) : NO_IDS;
 
   const withLine = (state: Pick<LineState, 'x' | 'y' | 'rotation'>, draw: () => void) => {
@@ -196,7 +204,6 @@ export function drawPreview(
     ctx.restore();
   };
 
-  // Text and media; z order < 0 draws below lines.
   const texts = sampleTexts(chart, t, sample);
   const mediaItems = sampleMedia(chart, t, sample);
   const noise = chart.noiseFields.length
@@ -237,79 +244,57 @@ export function drawPreview(
       }
     });
   };
-  const objects = [
-    ...texts.map(({ text, state }) => ({
-      z: text.zOrder,
-      ui: !!text.builtin,
-      draw: () => {
-        if (text.builtin ? hideUI : hideText) return;
-        if (text.builtin === 'pause' || text.builtin === 'bar') {
-          drawShapeUI(text, state);
-          return;
-        }
-        const scaled = text.alphaVar ? Number(vars[text.alphaVar] ?? 255) / 255 : 1;
-        const alpha = Math.min(1, (state.alpha / 255) * scaled);
-        const content = expandText(state.text, vars);
-        if (!content || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
-        withLine(state, () => {
-          const size = text.size * scale;
-          ctx.scale(state.scaleX, state.scaleY);
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = toCss(state.color);
-          ctx.font = `${size}px ${fontFamily(state.font)}`;
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          const [ax, ay] = text.anchor;
-          ctx.fillText(content, -ax * ctx.measureText(content).width, (ay - 0.5) * size);
-        });
-      },
-    })),
-    ...mediaItems.map(({ media, state }) => ({
-      z: media.zOrder,
-      ui: false,
-      draw: () => {
-        const loaded = getMedia(media.assetId);
-        if (!loaded || !loaded.width) return;
-        // Synced even when hidden so videos stay on time.
-        const frame = mediaFrame(loaded, state.mediaTime, media.loop, playing, rate);
-        const alpha = Math.min(1, state.alpha / 255);
-        if (hideMedia || !frame || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
-        if (media.playingOnly && !isPlaying(state.mediaTime, loaded.duration, media.loop)) return;
-        withLine(state, () => {
-          const [w, h] = mediaSize(loaded, media.fit, vp, scale);
-          ctx.scale(state.scaleX, state.scaleY);
-          const x = -media.anchor[0] * w;
-          const y = -(1 - media.anchor[1]) * h;
-          const m = ctx.getTransform();
-          if (offscreen(m, x, y, w, h, ctx.canvas)) return;
-          ctx.globalAlpha = alpha;
-          const [pw, ph] = deviceSize(m, w, h);
-          const img = frameFor(
-            frame,
-            loaded.width,
-            loaded.height,
-            pw,
-            ph,
-            state.color,
-            loaded.video,
-          );
-          ctx.drawImage(img, x, y, w, h);
-        });
-      },
-    })),
-  ].sort((a, b) => a.z - b.z);
-  // Chart shaders run under the UI, so the UI draws after them.
-  const uiLast = shaders.chart.length > 0;
-  const inChart = (o: (typeof objects)[number]) => !(uiLast && o.ui);
-  for (const o of objects) if (o.z < 0 && inChart(o)) o.draw();
-  ctx.globalAlpha = 1;
-
-  // Lines
-  for (const { line, i } of order) {
+  const drawText = (index: number) => {
+    const { text, state } = texts[index];
+    if (text.builtin ? hideUI : hideText) return;
+    if (text.builtin === 'pause' || text.builtin === 'bar') {
+      drawShapeUI(text, state);
+      return;
+    }
+    const scaled = text.alphaVar ? Number(vars[text.alphaVar] ?? 255) / 255 : 1;
+    const alpha = Math.min(1, (state.alpha / 255) * scaled);
+    const content = expandText(state.text, vars);
+    if (!content || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
+    withLine(state, () => {
+      const size = text.size * scale;
+      ctx.scale(state.scaleX, state.scaleY);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = toCss(state.color);
+      ctx.font = `${size}px ${fontFamily(state.font)}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const [ax, ay] = text.anchor;
+      ctx.fillText(content, -ax * ctx.measureText(content).width, (ay - 0.5) * size);
+    });
+  };
+  const drawMedia = (index: number) => {
+    const { media, state } = mediaItems[index];
+    const loaded = getMedia(media.assetId);
+    if (!loaded || !loaded.width) return;
+    // Synced even when hidden so videos stay on time.
+    const frame = mediaFrame(loaded, state.mediaTime, media.loop, playing, rate);
+    const alpha = Math.min(1, state.alpha / 255);
+    if (hideMedia || !frame || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
+    if (media.playingOnly && !isPlaying(state.mediaTime, loaded.duration, media.loop)) return;
+    withLine(state, () => {
+      const [w, h] = mediaSize(loaded, media.fit, vp, scale);
+      ctx.scale(state.scaleX, state.scaleY);
+      const x = -media.anchor[0] * w;
+      const y = -(1 - media.anchor[1]) * h;
+      const m = ctx.getTransform();
+      if (offscreen(m, x, y, w, h, ctx.canvas)) return;
+      ctx.globalAlpha = alpha;
+      const [pw, ph] = deviceSize(m, w, h);
+      const img = frameFor(frame, loaded.width, loaded.height, pw, ph, state.color, loaded.video);
+      ctx.drawImage(img, x, y, w, h);
+    });
+  };
+  const drawLine = (line: JudgeLine, i: number) => {
+    if (hiddenLines?.has(line.id)) return;
     const s = sample(i);
     const selected = highlightSelected && line.id === selectedLineId;
     const alpha = Math.min(1, s.alpha / 255);
-    if (alpha <= 0 || s.scaleX === 0 || s.scaleY === 0) continue;
+    if (alpha <= 0 || s.scaleX === 0 || s.scaleY === 0) return;
     withLine(s, () => {
       ctx.scale(s.scaleX, s.scaleY);
       ctx.globalAlpha = alpha;
@@ -322,10 +307,8 @@ export function drawPreview(
         LINE_HEIGHT * scale,
       );
     });
-  }
-
-  // Notes: holds below other notes.
-  for (const holds of [true, false]) {
+  };
+  const drawNotes = (holds: boolean) => {
     for (const { line, i } of order) {
       const s = sample(i);
       const runtime = lineRuntime(line, chart.bpmList);
@@ -342,22 +325,46 @@ export function drawPreview(
         }
       });
     }
-  }
+  };
+  const draw = (d: Drawable) => {
+    if (d.kind === 'line') drawLine(d.object, d.index);
+    else if (d.kind === 'text') drawText(d.index);
+    else drawMedia(d.index);
+    ctx.globalAlpha = 1;
+  };
 
-  // Noise fields above notes.
-  if (!hideNoise && noise.length) {
-    drawNoiseFields(
-      ctx,
-      noise,
-      { cx, cy, scale, scaleX },
-      highlightSelected ? selectedObjectId : null,
-      noiseQuality === 'original' ? t : null,
-    );
-  }
+  // Chart shaders run under the UI, so the UI draws after them.
+  const uiLast = shaders.chart.length > 0;
+  const isUI = (d: Drawable) => d.kind === 'text' && !!d.object.builtin;
 
-  // Objects with z order >= 0 above notes.
-  for (const o of objects) if (o.z >= 0 && inChart(o)) o.draw();
-  ctx.globalAlpha = 1;
+  // One depth pass (rpe-next): holds after objects at HOLD_Z, then notes and noise fields
+  // after objects at NOTE_Z.
+  let notePass = 0;
+  const notesBelow = (z: number) => {
+    if (notePass < 1 && z > HOLD_Z) {
+      drawNotes(true);
+      notePass = 1;
+    }
+    if (notePass < 2 && z > NOTE_Z) {
+      drawNotes(false);
+      if (!hideNoise && noise.length) {
+        drawNoiseFields(
+          ctx,
+          noise,
+          { cx, cy, scale, scaleX },
+          highlightSelected ? selectedObjectId : null,
+          noiseQuality === 'original' ? t : null,
+        );
+      }
+      notePass = 2;
+    }
+  };
+  for (const d of layers) {
+    if (uiLast && isUI(d)) continue;
+    notesBelow(d.object.zOrder);
+    draw(d);
+  }
+  notesBelow(Infinity);
 
   // Hit effects
   if (Number.isFinite(effectsSince)) {
@@ -391,8 +398,7 @@ export function drawPreview(
 
   if (uiLast) {
     shade(ctx, vp, shaders.chart, t);
-    for (const o of objects) if (o.ui) o.draw();
-    ctx.globalAlpha = 1;
+    for (const d of layers) if (isUI(d)) draw(d);
   }
   shade(ctx, vp, shaders.global, t);
 

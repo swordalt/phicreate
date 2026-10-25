@@ -15,8 +15,9 @@ import {
   type TextEvent,
   type TextObject,
 } from './types';
+import { ABOVE_NOTES } from './zOrder';
 
-export const CHART_FORMAT_VERSION = 1;
+export const CHART_FORMAT_VERSION = 2;
 
 export const CANVAS_WIDTH = 1350;
 export const CANVAS_HEIGHT = 900;
@@ -183,6 +184,7 @@ export function createBuiltinText(builtin: BuiltinText): TextObject {
     anchor: d.anchor,
     size: d.size,
     alphaVar: d.alphaVar,
+    zOrder: ABOVE_NOTES,
     defaults: { moveX: d.x, moveY: d.y, alpha: 255 },
     value: [builtinValue(d.value)],
   };

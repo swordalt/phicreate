@@ -14,6 +14,7 @@ import {
 import {
   CHANNELS,
   isLine,
+  isMedia,
   type Beat,
   type BuiltinText,
   type Channel,
@@ -33,6 +34,7 @@ import {
   type ShaderEffect,
   type TextObject,
 } from '../../model/types';
+import { drawOrder } from '../../model/zOrder';
 import { sample, simplify } from '../bake';
 import { FIT_EPS } from '../fit';
 import type { RpeExtra, RpeExtraEffect, RpeExtraVideo } from './extra';
@@ -443,7 +445,24 @@ export function chartToRpe(
     };
   });
 
-  for (const t of chart.texts) {
+  // Lines keep their indices (fathers); texts and media follow in draw order, as RPE breaks
+  // zOrder ties by index.
+  const objects = drawOrder(chart).flatMap((d) => (d.kind === 'line' ? [] : [d.object]));
+  const videos: RpeExtraVideo[] = [];
+  for (const o of objects) {
+    if (isMedia(o)) {
+      const path = o.assetId ? opts.mediaPaths[o.assetId] : undefined;
+      if (!path) continue;
+      if (o.kind === 'video') videos.push(video(o, path, father(o.parentId)));
+      if (o.kind !== 'image' && o.kind !== 'gif') continue;
+      list.push({
+        ...shownLine(o, chart, father(o.parentId), { ...MEDIA_DEFAULTS, ...o.defaults }),
+        Texture: path,
+        isGif: o.kind === 'gif',
+      });
+      continue;
+    }
+    const t = o;
     if (t.builtin) {
       if (!hasEvents(t) && !t.parentId) continue;
       // Attached UI events are offsets from the standard position.
@@ -458,19 +477,6 @@ export function chartToRpe(
     const line = shownLine(t, chart, father(t.parentId), t.defaults);
     line.extended = { ...line.extended, textEvents: t.value.map((e) => rpeEvent(e, String)) };
     list.push(line);
-  }
-
-  const videos: RpeExtraVideo[] = [];
-  for (const m of chart.media) {
-    const path = m.assetId ? opts.mediaPaths[m.assetId] : undefined;
-    if (!path) continue;
-    if (m.kind === 'video') videos.push(video(m, path, father(m.parentId)));
-    if (m.kind !== 'image' && m.kind !== 'gif') continue;
-    list.push({
-      ...shownLine(m, chart, father(m.parentId), { ...MEDIA_DEFAULTS, ...m.defaults }),
-      Texture: path,
-      isGif: m.kind === 'gif',
-    });
   }
 
   const areas = opts.noise ? chart.noiseFields.flatMap((f) => noiseArea(f, chart) ?? []) : [];

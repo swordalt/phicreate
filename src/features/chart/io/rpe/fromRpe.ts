@@ -27,6 +27,7 @@ import type {
   NoteType,
   TextObject,
 } from '../../model/types';
+import { NOTE_Z } from '../../model/zOrder';
 import { BASE_DEFAULTS, LINE_COLOR, NOISE_COLOR, WHITE } from '../../runtime/scene';
 import { MARKER_SIZE, markerKind, markerToNoise } from './markers';
 import { rpeNoiseAreas, rpeToNoiseFields } from './noise';
@@ -189,12 +190,19 @@ function note(n: RpeNote, at: BeatOf): Note {
 }
 
 // Texture as a media object; GIFs loop from beat 0 (progress events are dropped).
-function textureMedia(l: RpeJudgeLine, name: string, texture: string, assetId: Id | null) {
+function textureMedia(
+  l: RpeJudgeLine,
+  i: number,
+  name: string,
+  texture: string,
+  assetId: Id | null,
+) {
   const media = createMedia(name);
   const gif = !!l.isGif || /\.gif$/i.test(texture);
   media.kind = gif ? 'gif' : 'image';
   media.assetId = assetId;
   media.zOrder = num(l.zOrder, 0);
+  media.zTie = i;
   media.anchor = l.anchor ?? [0.5, 0.5];
   // RPE line alpha starts at 0.
   media.defaults = { alpha: 0 };
@@ -346,6 +354,7 @@ export function rpeToChart(
       text.color = lineColor;
       lineColor = [];
       text.zOrder = num(l.zOrder, 0);
+      text.zTie = i;
       if (l.anchor) text.anchor = l.anchor;
       if (!l.notes?.length && !hasChildren.has(i)) {
         text.layers = lineLayers;
@@ -362,7 +371,7 @@ export function rpeToChart(
     // Textured lines show the image instead of the line: same split as text lines.
     const texture = subtract === null ? rpeTexture(l) : null;
     if (texture) {
-      const item = textureMedia(l, name, texture, textures[texture] ?? null);
+      const item = textureMedia(l, i, name, texture, textures[texture] ?? null);
       item.color = colorEvents(l, at);
       lineColor = [];
       media.push(item);
@@ -422,6 +431,7 @@ export function rpeToChart(
       parentId: parentOf(l),
       rotateWithParent: rotates(l),
       zOrder: num(l.zOrder, 0),
+      zTie: i,
       groupId: chart.lineGroups[group]?.id ?? null,
       isCover: (l.isCover ?? 1) === 1,
       anchor: l.anchor ?? [0.5, 0.5],
@@ -441,6 +451,10 @@ export function rpeToChart(
       }
     }
   });
+
+  // RPE draws attached UI over everything.
+  const top = Math.max(...[...lines, ...texts, ...media].map((o) => o.zOrder), NOTE_Z) + 1;
+  for (const ui of chart.texts) ui.zOrder = top;
 
   chart.lines = lines;
   chart.texts = [...chart.texts, ...texts];

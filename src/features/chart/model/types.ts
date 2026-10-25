@@ -40,7 +40,10 @@ export interface JudgeLine {
   name: string;
   parentId: Id | null;
   rotateWithParent: boolean;
+  // Depth shared with texts and media; see model/zOrder.ts.
   zOrder: number;
+  // Breaks zOrder ties, lower first (the RPE line index on import).
+  zTie?: number;
   groupId: Id | null;
   isCover: boolean;
   // Pivot within the line, 0–1 (y up); 0.5 0.5 = middle.
@@ -79,6 +82,8 @@ export interface TextObject {
   parentId: Id | null; // judge line
   rotateWithParent: boolean;
   zOrder: number;
+  // Breaks zOrder ties, lower first (the RPE line index on import).
+  zTie?: number;
   layers: EventLayer[];
   color: ColorEvent[];
   // Single track (strings don't add across layers).
@@ -115,6 +120,8 @@ export interface MediaObject {
   parentId: Id | null; // judge line
   rotateWithParent: boolean;
   zOrder: number;
+  // Breaks zOrder ties, lower first (the RPE line index on import).
+  zTie?: number;
   layers: EventLayer[];
   // Tint (multiplied).
   color: ColorEvent[];
