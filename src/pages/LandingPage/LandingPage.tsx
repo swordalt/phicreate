@@ -8,6 +8,7 @@ import { ManageProjectsModal } from '@/features/projects/ManageProjectsModal/Man
 import { SettingsModal } from '@/features/settings/SettingsModal/SettingsModal';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
 import { IMPORT_ACCEPT, importProjectFile } from '@/features/projects/importProjectFile';
+import { trackChartCreated, trackChartImported } from '@/lib/analytics';
 import { pickFile } from '@/lib/file';
 import { PhiraImportModal } from '@/features/projects/PhiraImportModal/PhiraImportModal';
 import {
@@ -61,6 +62,7 @@ export function LandingPage() {
     const project = !noise && withoutNoise ? withoutNoise() : pending.project;
     setPending(null);
     await add(project);
+    trackChartImported(project.meta.id);
     if (format !== 'phicreate') openProject(project.meta.id);
     else updateSettings({ lastProjectId: project.meta.id });
   };
@@ -72,6 +74,7 @@ export function LandingPage() {
 
   const createProject = async (input: NewProjectInput) => {
     const meta = await create(input);
+    trackChartCreated(meta.id);
     updateSettings({ lastProjectId: meta.id });
     closeModal();
   };
