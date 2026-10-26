@@ -4,15 +4,17 @@ import { EventProperties } from './EventProperties';
 import { Section } from './fields';
 import { ObjectProperties } from './ObjectProperties';
 import { MetadataPanel } from './MetadataPanel';
+import { MultiEventEdit, MultiNoteEdit } from './MultiEdit';
 import { NoteProperties } from './NoteProperties';
 import { TimingPanel } from './TimingPanel';
 import styles from './SidePanel.module.css';
 
 export function SidePanel() {
   const activeGrid = useEditorStore((s) => s.activeGrid);
-  const hasSelection = useEditorStore((s) =>
-    s.activeGrid === 'events' ? s.selectedEventIds.length > 0 : s.selectedNoteIds.length > 0,
+  const count = useEditorStore((s) =>
+    s.activeGrid === 'events' ? s.selectedEventIds.length : s.selectedNoteIds.length,
   );
+  const hasSelection = count > 0;
   const objectPanelOpen = useEditorStore((s) => s.objectPanelOpen);
 
   // Back to the general view.
@@ -31,6 +33,9 @@ export function SidePanel() {
         <Section title={events ? 'Event properties' : 'Note properties'}>
           {events ? <EventProperties /> : <NoteProperties />}
         </Section>
+        {count > 1 && (
+          <Section title="Multi edit">{events ? <MultiEventEdit /> : <MultiNoteEdit />}</Section>
+        )}
       </Panel>
     );
   }
