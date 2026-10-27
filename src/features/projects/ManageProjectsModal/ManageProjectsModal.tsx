@@ -22,7 +22,7 @@ export function ManageProjectsModal({ open, onClose }: ManageProjectsModalProps)
 }
 
 function ManageDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { update, duplicate } = useProjectStore.getState();
+  const { update } = useProjectStore.getState();
   const [project, setProject] = useState<Project | null>(null);
   const [form, setForm] = useState<ProjectFormValues | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -53,12 +53,6 @@ function ManageDialog({ id, onClose }: { id: string | null; onClose: () => void 
     onClose();
   };
 
-  const duplicateProject = async () => {
-    if (!id) return;
-    await duplicate(id);
-    onClose();
-  };
-
   return (
     <Modal
       open
@@ -67,9 +61,6 @@ function ManageDialog({ id, onClose }: { id: string | null; onClose: () => void 
       footer={
         <>
           <div className={styles.actions}>
-            <Button variant="ghost" onClick={duplicateProject} disabled={!project}>
-              Duplicate
-            </Button>
             <Button variant="ghost" onClick={() => setExportOpen(true)} disabled={!project}>
               Export
             </Button>

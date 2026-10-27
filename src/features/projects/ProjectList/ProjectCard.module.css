@@ -139,3 +139,19 @@
     display: none;
   }
 }
+
+.duplicate {
+  position: relative;
+}
+
+.flyout {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  padding-bottom: var(--sp-1);
+}
+.duplicate:hover .flyout,
+.duplicate:focus-within .flyout {
+  display: block;
+}

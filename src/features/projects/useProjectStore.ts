@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createId } from '@/lib/id';
 import { setBaseBpm } from '@/features/chart/runtime/commands';
+import { createChart } from '@/features/chart/model/defaults';
 import { projectRepo } from './projectRepo';
 import { createProject } from './projectFactory';
 import type { NewProjectInput, Project, ProjectFormValues, ProjectMeta } from './types';
@@ -19,7 +20,7 @@ interface ProjectState {
   add: (project: Project) => Promise<void>;
   update: (id: string, values: ProjectFormValues) => Promise<void>;
   patchMeta: (id: string, patch: MetaPatch) => Promise<ProjectMeta | undefined>;
-  duplicate: (id: string) => Promise<void>;
+  duplicate: (id: string, mode?: 'copy' | 'remix') => Promise<void>;
   remove: (id: string) => Promise<void>;
   touch: (id: string) => Promise<void>;
 }
@@ -85,18 +86,33 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     return meta;
   },
 
-  async duplicate(id) {
+  async duplicate(id, mode = 'copy') {
     const source = await projectRepo.get(id);
     if (!source) return;
     const now = Date.now();
+    const meta: ProjectMeta = {
+      ...source.meta,
+      id: createId(),
+      name: `${source.meta.name} (${mode})`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (mode === 'remix') {
+      // Only BPM changes, metadata and audio / illustration carry over.
+      await get().add({
+        meta,
+        chart: {
+          ...createChart(120, 1),
+          offsetMs: source.chart.offsetMs,
+          bpmList: structuredClone(source.chart.bpmList),
+        },
+        audio: source.audio,
+        illustration: source.illustration,
+      });
+      return;
+    }
     await get().add({
-      meta: {
-        ...source.meta,
-        id: createId(),
-        name: `${source.meta.name} (copy)`,
-        createdAt: now,
-        updatedAt: now,
-      },
+      meta,
       chart: structuredClone(source.chart),
       audio: source.audio,
       illustration: source.illustration,

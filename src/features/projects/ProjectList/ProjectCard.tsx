@@ -12,6 +12,7 @@ interface ProjectCardProps {
   onOpen: () => void;
   onManage: () => void;
   onDelete: () => void;
+  onDuplicate: (mode: 'copy' | 'remix') => void;
 }
 
 export function ProjectCard({
@@ -21,6 +22,7 @@ export function ProjectCard({
   onOpen,
   onManage,
   onDelete,
+  onDuplicate,
 }: ProjectCardProps) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
@@ -115,6 +117,16 @@ export function ProjectCard({
             <Button size="sm" variant="danger" onClick={onDelete}>
               Delete
             </Button>
+            <span className={styles.duplicate}>
+              <Button size="sm" onClick={() => onDuplicate('copy')}>
+                Duplicate
+              </Button>
+              <span className={styles.flyout}>
+                <Button size="sm" onClick={() => onDuplicate('remix')}>
+                  Remix
+                </Button>
+              </span>
+            </span>
             <Button size="sm" onClick={onManage}>
               Manage
             </Button>

@@ -9,6 +9,7 @@ interface ProjectListProps {
   onOpen: (id: string) => void;
   onManage: (id: string) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (id: string, mode: 'copy' | 'remix') => void;
 }
 
 export function ProjectList({
@@ -18,6 +19,7 @@ export function ProjectList({
   onOpen,
   onManage,
   onDelete,
+  onDuplicate,
 }: ProjectListProps) {
   return (
     <ul className={styles.list} role="listbox" aria-label="Projects">
@@ -32,6 +34,7 @@ export function ProjectList({
               onSelect(p.id);
               onManage(p.id);
             }}
+            onDuplicate={(mode) => onDuplicate(p.id, mode)}
             onDelete={() => {
               onSelect(p.id);
               onDelete(p.id);

@@ -22,7 +22,7 @@ type ModalKind = 'new' | 'manage' | 'settings' | 'phira' | 'delete' | null;
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const { projects, loaded, selectedId, select, create, add, remove } = useProjectStore();
+  const { projects, loaded, selectedId, select, create, add, remove, duplicate } = useProjectStore();
   const updateSettings = useSettingsStore((s) => s.update);
   const [modal, setModal] = useState<ModalKind>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -143,6 +143,7 @@ export function LandingPage() {
                 onOpen={openProject}
                 onManage={() => setModal('manage')}
                 onDelete={() => setModal('delete')}
+                onDuplicate={duplicate}
               />
             )}
           </div>
