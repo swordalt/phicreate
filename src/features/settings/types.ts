@@ -5,6 +5,8 @@ export type NoiseQuality = 'simplified' | 'original';
 export type SelectMode = 'box' | 'line';
 export type HitEffects = 'always' | 'preview' | 'never';
 export type FrameCap = 'display' | 'uncapped' | 'custom';
+// Preview resolution, % of device pixels.
+export type RenderScale = '100' | '75' | '50';
 
 export const MIN_CUSTOM_FPS = 1;
 export const MAX_CUSTOM_FPS = 1000;
@@ -30,6 +32,13 @@ export interface Settings {
   // Preview
   noiseQuality: NoiseQuality;
   backgroundBlur: boolean;
+  renderOptimization: boolean;
+  // Sub-options; only apply with renderOptimization on.
+  skipStackedNotes: boolean;
+  skipFaintNotes: boolean;
+  skipHoldSeams: boolean;
+  simpleHitEffects: boolean;
+  renderScale: RenderScale;
   fullscreenAspect: boolean;
   highlightSimultaneous: boolean;
   highlightSelected: boolean;
@@ -53,6 +62,12 @@ export const DEFAULT_SETTINGS: Settings = {
   bearingMarker: false,
   noiseQuality: 'simplified',
   backgroundBlur: true,
+  renderOptimization: false,
+  skipStackedNotes: true,
+  skipFaintNotes: true,
+  skipHoldSeams: false,
+  simpleHitEffects: false,
+  renderScale: '100',
   fullscreenAspect: true,
   highlightSimultaneous: true,
   highlightSelected: true,
@@ -80,3 +95,17 @@ export function frameCapFps({ frameCap, customFps }: Settings) {
   if (frameCap === 'custom') return Math.min(MAX_CUSTOM_FPS, Math.max(MIN_CUSTOM_FPS, customFps));
   return 0;
 }
+
+// Active preview optimizations, or null when render optimization is off.
+export function renderOptimizations(s: Settings) {
+  if (!s.renderOptimization) return null;
+  return {
+    stackedNotes: s.skipStackedNotes,
+    faintNotes: s.skipFaintNotes,
+    holdSeams: s.skipHoldSeams,
+    simpleHits: s.simpleHitEffects,
+  };
+}
+
+export const renderScaleFactor = (s: Settings) =>
+  s.renderOptimization ? Number(s.renderScale) / 100 : 1;

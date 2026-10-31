@@ -67,6 +67,14 @@
   gap: var(--sp-4);
 }
 
+.subrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding-left: var(--sp-4);
+  border-left: 2px solid var(--c-border);
+}
+
 .note {
   font-size: var(--fs-sm);
   color: var(--c-text-muted);

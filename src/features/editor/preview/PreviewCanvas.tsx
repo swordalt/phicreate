@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Chart } from '@/features/chart/model/types';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
+import { renderOptimizations, renderScaleFactor } from '@/features/settings/types';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
 import { onFrame } from '@/lib/frameLoop';
 import { scrollTimeline } from '../grid/useGridCanvas';
@@ -51,12 +52,17 @@ export function PreviewCanvas() {
     let size = { w: 0, h: 0, dpr: 1 };
 
     const ro = new ResizeObserver(() => {
-      const dpr = window.devicePixelRatio || 1;
-      size = { w: wrap.clientWidth, h: wrap.clientHeight, dpr };
-      canvas.width = Math.round(size.w * dpr);
-      canvas.height = Math.round(size.h * dpr);
+      size = { ...size, w: wrap.clientWidth, h: wrap.clientHeight };
     });
     ro.observe(wrap);
+    // Backing store follows the container and render scale.
+    const fitCanvas = (scale: number) => {
+      size.dpr = (window.devicePixelRatio || 1) * scale;
+      const w = Math.round(size.w * size.dpr);
+      const h = Math.round(size.h * size.dpr);
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+    };
 
     let effectsSince = Infinity;
     let wasPlaying = false;
@@ -72,6 +78,7 @@ export function PreviewCanvas() {
       wasPlaying = editor.playing;
 
       const settings = useSettingsStore.getState().settings;
+      fitCanvas(renderScaleFactor(settings));
       // Preview only: none under the editing grid.
       const showHits =
         settings.hitEffects === 'always' ||
@@ -101,6 +108,7 @@ export function PreviewCanvas() {
         highlightSelected: settings.highlightSelected,
         judgeStatus: settings.judgeStatus,
         bearingMarker: settings.bearingMarker,
+        optimize: renderOptimizations(settings),
       });
     };
     const stopFrames = onFrame(frame);

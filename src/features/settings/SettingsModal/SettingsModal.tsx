@@ -27,6 +27,7 @@ import {
   type JudgeStatus,
   type Language,
   type NoiseQuality,
+  type RenderScale,
   type SelectMode,
   type Settings,
   type UiScale,
@@ -72,6 +73,12 @@ const SELECT_OPTIONS: { value: SelectMode; label: string }[] = [
 const NOISE_OPTIONS: { value: NoiseQuality; label: string }[] = [
   { value: 'simplified', label: 'Simplified' },
   { value: 'original', label: 'Original' },
+];
+
+const RENDER_SCALE_OPTIONS: { value: RenderScale; label: string }[] = [
+  { value: '100', label: '100%' },
+  { value: '75', label: '75%' },
+  { value: '50', label: '50%' },
 ];
 
 const HIT_OPTIONS: { value: HitEffects; label: string }[] = [
@@ -290,6 +297,47 @@ function PreviewTab({ settings, update }: { settings: Settings; update: Update }
           checked={settings.backgroundBlur}
           onChange={(backgroundBlur) => update({ backgroundBlur })}
         />
+        <Toggle
+          label="Render optimization"
+          hint="Skips off-screen notes, text and media, and stops syncing hidden videos. Large gains on dense charts, but unintended behavior may arise, such as notes popping in late or video hitches."
+          checked={settings.renderOptimization}
+          onChange={(renderOptimization) => update({ renderOptimization })}
+        />
+        {settings.renderOptimization && (
+          <div className={styles.subrows}>
+            <Toggle
+              label="Skip stacked notes"
+              hint="Draw notes of the same type sitting exactly on top of each other only once. Stacked translucent notes look lighter than in game."
+              checked={settings.skipStackedNotes}
+              onChange={(skipStackedNotes) => update({ skipStackedNotes })}
+            />
+            <Toggle
+              label="Skip faint notes"
+              hint="Skip notes that are almost fully transparent or under a pixel wide. Fade-ins may start a frame late."
+              checked={settings.skipFaintNotes}
+              onChange={(skipFaintNotes) => update({ skipFaintNotes })}
+            />
+            <Toggle
+              label="Skip hold seams"
+              hint="Skip the fill that hides seams between hold bodies and caps. Thin lines may show at the joints."
+              checked={settings.skipHoldSeams}
+              onChange={(skipHoldSeams) => update({ skipHoldSeams })}
+            />
+            <Toggle
+              label="Simple hit effects"
+              hint="Drop hit particles and draw hit effects at the same spot and time once."
+              checked={settings.simpleHitEffects}
+              onChange={(simpleHitEffects) => update({ simpleHitEffects })}
+            />
+            <Segmented
+              label="Render resolution"
+              hint="Render the preview at fewer pixels and upscale it. Big gains on high-DPI screens, but blurrier."
+              value={settings.renderScale}
+              options={RENDER_SCALE_OPTIONS}
+              onChange={(renderScale) => update({ renderScale })}
+            />
+          </div>
+        )}
         <Toggle
           label="Match screen aspect in fullscreen"
           hint="Change the aspect ratio to fit the screen in fullscreen preview, then restore it."

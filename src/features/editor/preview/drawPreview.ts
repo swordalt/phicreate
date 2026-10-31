@@ -23,6 +23,7 @@ import { drawNoiseFields } from './drawNoise';
 import { fontFamily } from './fonts';
 import { frameFor } from './frameCache';
 import { beginMediaFrame, getMedia, mediaFrame } from './media';
+import { noteIndex, queryNotes } from './noteCulling';
 import { NO_PASSES, type ActivePasses } from './shaderPasses';
 import { chartVariables, expandText, type ProjectInfo } from './variables';
 import {
@@ -48,6 +49,8 @@ const HIT_SIZE = NOTE_WIDTH * 1.4;
 const HIT_LIFETIME = Math.max(HIT_DURATION, 2 / 3);
 const HOLD_HIT_INTERVAL = 20 / 120;
 const HOLD_SEAM_OVERLAP = 1.5;
+// Optimized: notes fainter than this are skipped.
+const FAINT_ALPHA = 0.02;
 const BACKGROUND_ALPHA = 0.35;
 const BAR_ALPHA = 0.55;
 const FALLBACK_COLORS = { tap: '#0ac3ff', drag: '#f0ed69', flick: '#fe4365', hold: '#0ac3ff' };
@@ -82,6 +85,38 @@ export interface PreviewOptions {
   hideText?: boolean;
   hideMedia?: boolean;
   hideNoise?: boolean;
+  // Culls off-screen notes, text and media; may cause unintended behavior.
+  optimize?: PreviewOptimizations | null;
+}
+
+// Extra lossy shortcuts, on top of culling.
+export interface PreviewOptimizations {
+  // Skips notes drawn exactly over an earlier one of the same look.
+  stackedNotes: boolean;
+  // Skips nearly transparent or sub-pixel notes.
+  faintNotes: boolean;
+  // Skips the hold body/cap seam fill.
+  holdSeams: boolean;
+  // No hit particles; stacked hit effects draw once.
+  simpleHits: boolean;
+}
+
+// Per-line note filters for drawNote.
+interface NoteCull {
+  bounds: Bounds;
+  // Line transform, for device-space checks.
+  m: DOMMatrix;
+  stacked: Set<string> | null;
+  faint: boolean;
+  seams: boolean;
+}
+
+// Line-local drawing-space bounds (px) of the visible area.
+interface Bounds {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
 }
 
 // The play frame is CANVAS_HEIGHT tall and CANVAS_HEIGHT * aspect wide, fitted then zoomed by 1 / fov.
@@ -164,6 +199,7 @@ export function drawPreview(
     hideText = false,
     hideMedia = false,
     hideNoise = false,
+    optimize = null,
   }: PreviewOptions,
 ) {
   setJudgeStatus(judgeStatus);
@@ -195,6 +231,33 @@ export function drawPreview(
     d.kind === 'line' && !hiddenLines?.has(d.object.id) ? [{ line: d.object, i: d.index }] : [],
   );
   const highlight = highlightSimultaneous ? simultaneous(chart) : NO_IDS;
+
+  // Visible area: the play frame when clipped, else the whole canvas.
+  const view =
+    fov <= 1
+      ? { x0: vp.left, y0: vp.top, x1: vp.left + vp.width, y1: vp.top + vp.height }
+      : { x0: 0, y0: 0, x1: width, y1: height };
+  const localBounds = (state: Pick<LineState, 'x' | 'y' | 'rotation'>): Bounds => {
+    const ox = cx + state.x * scaleX;
+    const oy = cy - state.y * scale;
+    const a = (state.rotation * Math.PI) / 180;
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    const b = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+    for (const px of [view.x0, view.x1]) {
+      for (const py of [view.y0, view.y1]) {
+        const dx = px - ox;
+        const dy = py - oy;
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        b.x0 = Math.min(b.x0, lx);
+        b.x1 = Math.max(b.x1, lx);
+        b.y0 = Math.min(b.y0, ly);
+        b.y1 = Math.max(b.y1, ly);
+      }
+    }
+    return b;
+  };
 
   const withLine = (state: Pick<LineState, 'x' | 'y' | 'rotation'>, draw: () => void) => {
     ctx.save();
@@ -264,17 +327,22 @@ export function drawPreview(
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       const [ax, ay] = text.anchor;
-      ctx.fillText(content, -ax * ctx.measureText(content).width, (ay - 0.5) * size);
+      const w = ctx.measureText(content).width;
+      if (optimize && offscreen(ctx.getTransform(), -ax * w, (ay - 1) * size, w, size, ctx.canvas))
+        return;
+      ctx.fillText(content, -ax * w, (ay - 0.5) * size);
     });
   };
   const drawMedia = (index: number) => {
     const { media, state } = mediaItems[index];
     const loaded = getMedia(media.assetId);
     if (!loaded || !loaded.width) return;
-    // Synced even when hidden so videos stay on time.
-    const frame = mediaFrame(loaded, state.mediaTime, media.loop, playing, rate);
+    const sync = () => mediaFrame(loaded, state.mediaTime, media.loop, playing, rate);
+    // Synced even when hidden so videos stay on time; optimized, hidden videos skip syncing.
+    const synced = optimize ? null : sync();
     const alpha = Math.min(1, state.alpha / 255);
-    if (hideMedia || !frame || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
+    if (hideMedia || alpha <= 0 || state.scaleX === 0 || state.scaleY === 0) return;
+    if (!optimize && !synced) return;
     if (media.playingOnly && !isPlaying(state.mediaTime, loaded.duration, media.loop)) return;
     withLine(state, () => {
       const [w, h] = mediaSize(loaded, media.fit, vp, scale);
@@ -283,6 +351,8 @@ export function drawPreview(
       const y = -(1 - media.anchor[1]) * h;
       const m = ctx.getTransform();
       if (offscreen(m, x, y, w, h, ctx.canvas)) return;
+      const frame = optimize ? sync() : synced;
+      if (!frame) return;
       ctx.globalAlpha = alpha;
       const [pw, ph] = deviceSize(m, w, h);
       const img = frameFor(frame, loaded.width, loaded.height, pw, ph, state.color, loaded.video);
@@ -308,21 +378,57 @@ export function drawPreview(
       );
     });
   };
+  // Optimized: on-screen candidates per line, shared by the hold and note passes.
+  const culled = new Map<number, { bounds: Bounds; notes: number[] }>();
+  const visibleNotes = (runtime: ReturnType<typeof lineRuntime>, s: LineState, i: number) => {
+    let hit = culled.get(i);
+    if (!hit) {
+      const bounds = localBounds(s);
+      const index = noteIndex(runtime);
+      // Heads and hold caps reach past the note position.
+      const margin = NOTE_WIDTH * Math.max(1, index.maxSize);
+      const notes = queryNotes(
+        index,
+        s.floor,
+        -bounds.y1 / scale - margin,
+        -bounds.y0 / scale + margin,
+      );
+      culled.set(i, (hit = { bounds, notes }));
+    }
+    return hit;
+  };
+  // Optimized: note looks drawn this frame, to skip exact repeats.
+  const stacked = new Set<string>();
   const drawNotes = (holds: boolean) => {
     for (const { line, i } of order) {
       const s = sample(i);
       const runtime = lineRuntime(line, chart.bpmList);
       const radius = 1600 + Math.hypot(s.x, s.y);
+      const drawAt = (k: number, cull?: NoteCull) => {
+        const entry = runtime.notes[k];
+        if ((entry.note.type === 'hold') !== holds || !isNoteVisible(entry, runtime, s, t)) return;
+        drawNote(ctx, entry, s, t, scale, scaleX, radius, highlight.has(entry.note.id), cull);
+      };
+      if (optimize) {
+        const { bounds, notes } = visibleNotes(runtime, s, i);
+        if (!notes.length) continue;
+        withLine(s, () => {
+          const cull: NoteCull = {
+            bounds,
+            m: ctx.getTransform(),
+            stacked: optimize.stackedNotes ? stacked : null,
+            faint: optimize.faintNotes,
+            seams: !optimize.holdSeams,
+          };
+          notes.forEach((k) => drawAt(k, cull));
+        });
+        continue;
+      }
       // Notes ending before t are never visible.
       const first = runtime.firstEndingFrom(t);
       if (first >= runtime.notes.length) continue;
       withLine(s, () => {
-        for (let k = first; k < runtime.notes.length; k++) {
-          const entry = runtime.notes[k];
-          if ((entry.note.type === 'hold') !== holds || !isNoteVisible(entry, runtime, s, t))
-            continue;
-          drawNote(ctx, entry, s, t, scale, scaleX, radius, highlight.has(entry.note.id));
-        }
+        for (let k = first; k < runtime.notes.length; k++) drawAt(k);
       });
     }
   };
@@ -375,6 +481,8 @@ export function drawPreview(
       return s;
     };
     const from = Math.max(t - HIT_LIFETIME, effectsSince);
+    const simpleHits = !!optimize?.simpleHits;
+    const drawnHits = new Set<string>();
     for (const { line, i } of order) {
       const runtime = lineRuntime(line, chart.bpmList);
       // Hits need end > from and start <= t.
@@ -390,7 +498,12 @@ export function drawPreview(
           const ny = n.y * scale;
           const x = cx + s.x * scaleX + nx * Math.cos(a) + ny * Math.sin(a);
           const y = cy - s.y * scale + nx * Math.sin(a) - ny * Math.cos(a);
-          drawHit(ctx, x, y, t - time, scale, Math.round(time * 1000) + i * 65537);
+          if (simpleHits) {
+            const key = `${Math.round(x)}|${Math.round(y)}|${time}`;
+            if (drawnHits.has(key)) continue;
+            drawnHits.add(key);
+          }
+          drawHit(ctx, x, y, t - time, scale, Math.round(time * 1000) + i * 65537, !simpleHits);
         }
       }
     }
@@ -510,6 +623,7 @@ function drawNote(
   scaleX: number,
   radius: number,
   highlight: boolean,
+  cull?: NoteCull,
 ) {
   const n = noteState(entry, line, t);
   if (n.alpha <= 0 || n.size === 0) return;
@@ -517,10 +631,35 @@ function drawNote(
   const width = NOTE_WIDTH * scale * n.size;
   const x = n.x * scaleX;
   const head = -n.y * scale;
+  const tail = entry.note.type === 'hold' ? -n.tail * scale : head;
+  if (cull) {
+    const { bounds, m } = cull;
+    const pad = Math.abs(width);
+    if (x + pad / 2 < bounds.x0 || x - pad / 2 > bounds.x1) return;
+    if (Math.max(head, tail) + pad < bounds.y0 || Math.min(head, tail) - pad > bounds.y1) return;
+    if (cull.faint && (n.alpha < FAINT_ALPHA || pad * Math.hypot(m.a, m.b) < 1)) return;
+    if (cull.stacked) {
+      // Device position, width, orientation and texture; alpha is ignored.
+      const key = [
+        entry.note.type,
+        highlight,
+        n.showHead,
+        Math.round(m.a * x + m.c * head + m.e),
+        Math.round(m.b * x + m.d * head + m.f),
+        Math.round(m.c * (tail - head)),
+        Math.round(m.d * (tail - head)),
+        Math.round(width),
+        Math.round(m.a * 100),
+        Math.round(m.b * 100),
+      ].join('|');
+      if (cull.stacked.has(key)) return;
+      cull.stacked.add(key);
+    }
+  }
   ctx.globalAlpha = Math.min(1, n.alpha);
 
   if (entry.note.type === 'hold') {
-    drawHold(ctx, x, head, -n.tail * scale, width, highlight, n.showHead);
+    drawHold(ctx, x, head, tail, width, highlight, n.showHead, cull?.seams ?? true);
   } else if (n.showHead) {
     const img = headImage(entry.note.type, highlight);
     if (img) {
@@ -542,6 +681,7 @@ function drawHold(
   width: number,
   highlight: boolean,
   showHead: boolean,
+  seams: boolean,
 ) {
   const { body, end, head: headImg } = holdImages(highlight);
   const length = Math.abs(tail - head);
@@ -559,12 +699,12 @@ function drawHold(
   if (end) {
     const w = end.naturalWidth * unit;
     const h = end.naturalHeight * unit;
-    drawSeam(ctx, body, end, end.naturalHeight - 1, 0, unit, -length);
+    if (seams) drawSeam(ctx, body, end, end.naturalHeight - 1, 0, unit, -length);
     ctx.drawImage(end, -w / 2, -length - h, w, h);
   }
   if (showHead && headImg) {
     const w = headImg.naturalWidth * unit;
-    drawSeam(ctx, body, headImg, 0, body.naturalHeight - 1, unit, 0);
+    if (seams) drawSeam(ctx, body, headImg, 0, body.naturalHeight - 1, unit, 0);
     ctx.drawImage(headImg, -w / 2, 0, w, headImg.naturalHeight * unit);
   }
   ctx.restore();
@@ -611,6 +751,7 @@ function drawHit(
   age: number,
   scale: number,
   seed: number,
+  particles: boolean,
 ) {
   if (age < 0) return;
   const frame =
@@ -620,7 +761,7 @@ function drawHit(
   if (img) ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
 
   // Particles
-  if (age >= 2 / 3) return;
+  if (!particles || age >= 2 / 3) return;
   const amount = ease({ kind: 'preset', id: 16 }, age * 1.5);
   const noteSize = NOTE_WIDTH * scale;
   ctx.fillStyle = `rgb(${HIT_COLOR.join(',')})`;
