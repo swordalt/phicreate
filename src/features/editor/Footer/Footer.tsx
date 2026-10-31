@@ -4,6 +4,7 @@ import { BUILTIN_TEXTS, CHANNELS } from '@/features/chart/model/types';
 import type { EventLayer } from '@/features/chart/model/types';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
+import { onFrame } from '@/lib/frameLoop';
 import { useEditorStore } from '../useEditorStore';
 import styles from './Footer.module.css';
 
@@ -55,21 +56,18 @@ function Stat({
 function FpsCounter() {
   const [fps, setFps] = useState(0);
 
+  // Counts frames of the shared (capped) render loop.
   useEffect(() => {
-    let raf = 0;
     let frames = 0;
     let last = performance.now();
-    const tick = (now: number) => {
+    return onFrame((now) => {
       frames++;
       if (now - last >= 500) {
         setFps(Math.round((frames * 1000) / (now - last)));
         frames = 0;
         last = now;
       }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    });
   }, []);
 
   return <span className={styles.fps}>{fps} FPS</span>;

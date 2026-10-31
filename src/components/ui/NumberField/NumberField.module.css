@@ -1,0 +1,35 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.input {
+  width: 80px;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  text-align: right;
+  transition: border-color var(--t-fast);
+}
+.input:hover {
+  border-color: var(--c-hover);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+
+.suffix {
+  font-size: var(--fs-sm);
+  color: var(--c-text-muted);
+}

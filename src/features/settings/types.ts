@@ -4,6 +4,10 @@ export type NoiseQuality = 'simplified' | 'original';
 // Multi-select gesture in the grids: drag a box, or draw a line through items.
 export type SelectMode = 'box' | 'line';
 export type HitEffects = 'always' | 'preview' | 'never';
+export type FrameCap = 'display' | 'uncapped' | 'custom';
+
+export const MIN_CUSTOM_FPS = 1;
+export const MAX_CUSTOM_FPS = 1000;
 
 export type { JudgeStatus } from '@/features/chart/runtime/scene';
 import type { JudgeStatus } from '@/features/chart/runtime/scene';
@@ -13,6 +17,8 @@ export interface Settings {
   language: Language;
   uiScale: UiScale;
   showFps: boolean;
+  frameCap: FrameCap;
+  customFps: number;
   // Audio (0–1)
   musicVolume: number;
   hitsoundVolume: number;
@@ -37,6 +43,8 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   uiScale: '100',
   showFps: false,
+  frameCap: 'display',
+  customFps: 60,
   musicVolume: 1,
   hitsoundVolume: 0.5,
   audioOffsetMs: 0,
@@ -64,4 +72,11 @@ export function normalizeSettings(stored: unknown): Settings {
   }
   if (raw.hitsounds === false && raw.hitsoundVolume === undefined) settings.hitsoundVolume = 0;
   return settings;
+}
+
+// Frame cap for the render loop: 0 = display rate, Infinity = uncapped.
+export function frameCapFps({ frameCap, customFps }: Settings) {
+  if (frameCap === 'uncapped') return Infinity;
+  if (frameCap === 'custom') return Math.min(MAX_CUSTOM_FPS, Math.max(MIN_CUSTOM_FPS, customFps));
+  return 0;
 }

@@ -6,6 +6,7 @@ import {
   type EventOwner,
 } from '@/features/chart/model/types';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
+import { onFrame } from '@/lib/frameLoop';
 import { playback } from '../playback/playback';
 import { useEditorStore } from '../useEditorStore';
 import { beatToMusicTime, musicTimeToBeat } from '../time';
@@ -53,9 +54,7 @@ export function useGridCanvas(
     });
     ro.observe(wrap);
 
-    let raf = 0;
     const frame = () => {
-      raf = requestAnimationFrame(frame);
       const chart = useChartStore.getState().chart;
       const editor = useEditorStore.getState();
       if (!chart || !size.w) return;
@@ -65,7 +64,7 @@ export function useGridCanvas(
       ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
       drawRef.current({ ctx, g, palette, chart, editor });
     };
-    raf = requestAnimationFrame(frame);
+    const stopFrames = onFrame(frame);
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -80,7 +79,7 @@ export function useGridCanvas(
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
-      cancelAnimationFrame(raf);
+      stopFrames();
       ro.disconnect();
       canvas.removeEventListener('wheel', onWheel);
     };

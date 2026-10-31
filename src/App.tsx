@@ -4,9 +4,12 @@ import { LandingPage } from '@/pages/LandingPage/LandingPage';
 import { EditorPage } from '@/pages/EditorPage/EditorPage';
 import { useProjectStore } from '@/features/projects/useProjectStore';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
+import { frameCapFps } from '@/features/settings/types';
+import { setFrameCap } from '@/lib/frameLoop';
 
 function useBootstrap() {
   const uiScale = useSettingsStore((s) => s.settings.uiScale);
+  const frameCap = useSettingsStore((s) => frameCapFps(s.settings));
 
   useEffect(() => {
     void (async () => {
@@ -21,6 +24,8 @@ function useBootstrap() {
   useEffect(() => {
     document.documentElement.style.zoom = String(Number(uiScale) / 100);
   }, [uiScale]);
+
+  useEffect(() => setFrameCap(frameCap), [frameCap]);
 }
 
 export function App() {

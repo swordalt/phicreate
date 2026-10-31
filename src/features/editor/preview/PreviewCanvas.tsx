@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Chart } from '@/features/chart/model/types';
 import { useChartStore } from '@/features/chart/runtime/useChartStore';
 import { useSettingsStore } from '@/features/settings/useSettingsStore';
+import { onFrame } from '@/lib/frameLoop';
 import { scrollTimeline } from '../grid/useGridCanvas';
 import { playback } from '../playback/playback';
 import { useEditorStore } from '../useEditorStore';
@@ -57,11 +58,9 @@ export function PreviewCanvas() {
     });
     ro.observe(wrap);
 
-    let raf = 0;
     let effectsSince = Infinity;
     let wasPlaying = false;
     const frame = () => {
-      raf = requestAnimationFrame(frame);
       const chart = useChartStore.getState().chart;
       const editor = useEditorStore.getState();
       if (!chart || !size.w) return;
@@ -104,7 +103,7 @@ export function PreviewCanvas() {
         bearingMarker: settings.bearingMarker,
       });
     };
-    raf = requestAnimationFrame(frame);
+    const stopFrames = onFrame(frame);
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -132,7 +131,7 @@ export function PreviewCanvas() {
     return () => {
       document.removeEventListener('fullscreenchange', onFullscreen);
       restoreAspect();
-      cancelAnimationFrame(raf);
+      stopFrames();
       if (document.fullscreenElement === wrap) void document.exitFullscreen();
       if (previewWrap === wrap) previewWrap = null;
       pauseAllMedia();

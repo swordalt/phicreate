@@ -4,6 +4,7 @@ import {
   DownloadIcon,
   EyeIcon,
   Modal,
+  NumberField,
   PencilIcon,
   Segmented,
   Select,
@@ -18,7 +19,18 @@ import { clearAppData, exportAppData, importAppData } from '@/features/backup/ap
 import { useProjectStore } from '@/features/projects/useProjectStore';
 import { downloadBlob, pickFile } from '@/lib/file';
 import { useSettingsStore } from '../useSettingsStore';
-import type { HitEffects, JudgeStatus, Language, NoiseQuality, SelectMode, Settings, UiScale } from '../types';
+import {
+  MAX_CUSTOM_FPS,
+  MIN_CUSTOM_FPS,
+  type FrameCap,
+  type HitEffects,
+  type JudgeStatus,
+  type Language,
+  type NoiseQuality,
+  type SelectMode,
+  type Settings,
+  type UiScale,
+} from '../types';
 import styles from './SettingsModal.module.css';
 
 interface SettingsModalProps {
@@ -44,6 +56,12 @@ const SCALE_OPTIONS: { value: UiScale; label: string }[] = [
   { value: '100', label: '100%' },
   { value: '110', label: '110%' },
   { value: '125', label: '125%' },
+];
+
+const FRAME_CAP_OPTIONS: { value: FrameCap; label: string }[] = [
+  { value: 'display', label: 'Display' },
+  { value: 'uncapped', label: 'Uncapped' },
+  { value: 'custom', label: 'Custom' },
 ];
 
 const SELECT_OPTIONS: { value: SelectMode; label: string }[] = [
@@ -183,6 +201,26 @@ function GeneralTab({ settings, update }: { settings: Settings; update: Update }
           checked={settings.showFps}
           onChange={(showFps) => update({ showFps })}
         />
+      </Section>
+      <Section title="Performance">
+        <Segmented
+          label="Frame rate cap"
+          hint="Display matches your monitor's refresh rate. Uncapped may raise CPU and GPU usage."
+          value={settings.frameCap}
+          options={FRAME_CAP_OPTIONS}
+          onChange={(frameCap) => update({ frameCap })}
+        />
+        {settings.frameCap === 'custom' && (
+          <NumberField
+            label="Custom frame rate"
+            hint={`Between ${MIN_CUSTOM_FPS} and ${MAX_CUSTOM_FPS} FPS.`}
+            value={settings.customFps}
+            min={MIN_CUSTOM_FPS}
+            max={MAX_CUSTOM_FPS}
+            suffix="FPS"
+            onChange={(customFps) => update({ customFps })}
+          />
+        )}
       </Section>
       <DataSection />
     </>
