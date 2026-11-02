@@ -33,11 +33,46 @@ export type EventValue = number | string | Color;
 export const formatValue = (v: EventValue) =>
   typeof v === 'string' ? v : isColor(v) ? toHex(v) : String(Math.round(v * 1000) / 1000);
 
+type ValueRange = [number, number];
+
+// Value range shared by runs of touching numeric events in a column, keyed by event id.
+export function chainRanges(
+  events: { event: Pick<Event<unknown>, 'id' | 'start' | 'end' | 'from' | 'to'>; column: number }[],
+) {
+  const ranges = new Map<string, ValueRange>();
+  const byColumn = new Map<number, typeof events>();
+  for (const x of events) {
+    if (typeof x.event.from !== 'number' || typeof x.event.to !== 'number') continue;
+    const list = byColumn.get(x.column);
+    if (list) list.push(x);
+    else byColumn.set(x.column, [x]);
+  }
+  for (const list of byColumn.values()) {
+    list.sort((a, b) => toFloat(a.event.start) - toFloat(b.event.start));
+    let chain: typeof list = [];
+    const flush = () => {
+      const vals = chain.flatMap(({ event: e }) => [e.from as number, e.to as number]);
+      const range: ValueRange = [Math.min(...vals), Math.max(...vals)];
+      for (const { event } of chain) ranges.set(event.id, range);
+      chain = [];
+    };
+    for (const x of list) {
+      const prev = chain[chain.length - 1];
+      if (prev && Math.abs(toFloat(prev.event.end) - toFloat(x.event.start)) > 1e-9) flush();
+      chain.push(x);
+    }
+    if (chain.length) flush();
+  }
+  return ranges;
+}
+
 interface EventStyle {
   selected?: boolean;
   ghost?: boolean;
   // Easing curve inside the block.
   curve?: boolean;
+  // Value span mapped across the block width; defaults to the event's own from/to.
+  range?: ValueRange;
   // Replaces the value text.
   label?: string;
 }
@@ -48,7 +83,7 @@ export function drawEvent(
   columns: EventColumn[],
   column: number,
   e: Pick<Event<EventValue>, 'start' | 'end' | 'from' | 'to' | 'easing' | 'locked'>,
-  { selected, ghost, curve = true, label }: EventStyle = {},
+  { selected, ghost, curve = true, range, label }: EventStyle = {},
   dBeat = 0,
 ) {
   const r = eventRect(g, columns, column, toFloat(e.start) + dBeat, toFloat(e.end) + dBeat);
@@ -78,8 +113,8 @@ export function drawEvent(
   if (curve && h > 6 && typeof e.from === 'number' && typeof e.to === 'number') {
     const from = e.from;
     const to = e.to;
-    const lo = Math.min(from, to);
-    const span = Math.max(from, to) - lo;
+    const lo = range ? range[0] : Math.min(from, to);
+    const span = range ? range[1] - range[0] : Math.abs(to - from);
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();

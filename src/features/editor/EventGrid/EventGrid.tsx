@@ -41,6 +41,7 @@ import { currentTarget, GRID_BACKDROP, useGridCanvas, type GridFrame } from '../
 import {
   columnAt,
   columnWidth,
+  chainRanges,
   drawEvent,
   drawFooter,
   drawHeader,
@@ -137,11 +138,14 @@ export function EventGrid() {
           : 'chart'
         : undefined;
 
+    const ranges = curve ? chainRanges(events) : null;
+
     for (const { event, column, channel } of events) {
       if (moving?.has(event.id) || (drag?.kind === 'resize' && drag.id === event.id)) continue;
       drawEvent(ctx, g, cols, column, event, {
         selected: selected.has(event.id),
         curve,
+        range: ranges?.get(event.id),
         label: scope(channel, event),
       });
     }
@@ -168,7 +172,7 @@ export function EventGrid() {
             cols,
             column,
             event,
-            { selected: true, curve, label: scope(channel, event) },
+            { selected: true, curve, range: ranges?.get(event.id), label: scope(channel, event) },
             dBeat,
           );
       }
@@ -178,6 +182,7 @@ export function EventGrid() {
         drawEvent(ctx, g, cols, found.column, resized(found.event, drag), {
           selected: true,
           curve,
+          range: ranges?.get(found.event.id),
           label: scope(found.channel, found.event),
         });
     } else if (drag?.kind === 'box') {
