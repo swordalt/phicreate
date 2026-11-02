@@ -16,12 +16,13 @@ import {
   type NoteEntry,
 } from '@/features/chart/runtime/scene';
 import { ease } from '@/features/chart/model/easing';
-import type { NoiseQuality } from '@/features/settings/types';
+import type { NoiseQuality, PreviewSelectType } from '@/features/settings/types';
 import { applyShaders, type ShaderPass } from '@/features/shaders/pipeline';
 import { getBackground } from './background';
-import { drawNoiseFields } from './drawNoise';
+import { drawNoiseFields, noiseCorners } from './drawNoise';
 import { fontFamily } from './fonts';
 import { frameFor } from './frameCache';
+import { rectPoints, transformPoints, type HitCollector } from './hits';
 import { beginMediaFrame, getMedia, mediaFrame } from './media';
 import { noteIndex, queryNotes } from './noteCulling';
 import { NO_PASSES, type ActivePasses } from './shaderPasses';
@@ -87,6 +88,8 @@ export interface PreviewOptions {
   hideNoise?: boolean;
   // Culls off-screen notes, text and media; may cause unintended behavior.
   optimize?: PreviewOptimizations | null;
+  // Records drawn selectable objects.
+  hits?: HitCollector | null;
 }
 
 // Extra lossy shortcuts, on top of culling.
@@ -200,6 +203,7 @@ export function drawPreview(
     hideMedia = false,
     hideNoise = false,
     optimize = null,
+    hits = null,
   }: PreviewOptions,
 ) {
   setJudgeStatus(judgeStatus);
@@ -259,6 +263,22 @@ export function drawPreview(
     return b;
   };
 
+  // Records a rect under the current transform.
+  const addHit = (
+    kind: PreviewSelectType,
+    id: string,
+    rect: readonly [number, number, number, number],
+    lineId?: string,
+  ) => {
+    if (!hits?.kinds.has(kind)) return;
+    hits.out.push({
+      kind,
+      id,
+      lineId,
+      quad: transformPoints(ctx.getTransform(), rectPoints(...rect)),
+    });
+  };
+
   const withLine = (state: Pick<LineState, 'x' | 'y' | 'rotation'>, draw: () => void) => {
     ctx.save();
     ctx.translate(cx + state.x * scaleX, cy - state.y * scale);
@@ -305,6 +325,7 @@ export function drawPreview(
         ctx.fillRect(x, y, w * 0.35, h);
         ctx.fillRect(x + w * 0.65, y, w * 0.35, h);
       }
+      addHit('ui', text.id, [x, y, w, h]);
     });
   };
   const drawText = (index: number) => {
@@ -331,6 +352,7 @@ export function drawPreview(
       if (optimize && offscreen(ctx.getTransform(), -ax * w, (ay - 1) * size, w, size, ctx.canvas))
         return;
       ctx.fillText(content, -ax * w, (ay - 0.5) * size);
+      addHit(text.builtin ? 'ui' : 'text', text.id, [-ax * w, (ay - 1) * size, w, size]);
     });
   };
   const drawMedia = (index: number) => {
@@ -357,6 +379,7 @@ export function drawPreview(
       const [pw, ph] = deviceSize(m, w, h);
       const img = frameFor(frame, loaded.width, loaded.height, pw, ph, state.color, loaded.video);
       ctx.drawImage(img, x, y, w, h);
+      addHit('media', media.id, [x, y, w, h]);
     });
   };
   const drawLine = (line: JudgeLine, i: number) => {
@@ -370,12 +393,14 @@ export function drawPreview(
       ctx.globalAlpha = alpha;
       ctx.fillStyle = selected ? SELECTED_LINE_COLOR : toCss(s.color);
       const [ax, ay] = line.anchor;
-      ctx.fillRect(
+      const rect = [
         -ax * LINE_WIDTH * scale,
         -(1 - ay) * LINE_HEIGHT * scale,
         LINE_WIDTH * scale,
         LINE_HEIGHT * scale,
-      );
+      ] as const;
+      ctx.fillRect(...rect);
+      addHit('line', line.id, rect);
     });
   };
   // Optimized: on-screen candidates per line, shared by the hold and note passes.
@@ -407,7 +432,18 @@ export function drawPreview(
       const drawAt = (k: number, cull?: NoteCull) => {
         const entry = runtime.notes[k];
         if ((entry.note.type === 'hold') !== holds || !isNoteVisible(entry, runtime, s, t)) return;
-        drawNote(ctx, entry, s, t, scale, scaleX, radius, highlight.has(entry.note.id), cull);
+        const rect = drawNote(
+          ctx,
+          entry,
+          s,
+          t,
+          scale,
+          scaleX,
+          radius,
+          highlight.has(entry.note.id),
+          cull,
+        );
+        if (rect) addHit('note', entry.note.id, rect, line.id);
       };
       if (optimize) {
         const { bounds, notes } = visibleNotes(runtime, s, i);
@@ -461,6 +497,14 @@ export function drawPreview(
           highlightSelected ? selectedObjectId : null,
           noiseQuality === 'original' ? t : null,
         );
+        if (hits?.kinds.has('noise')) {
+          const m = ctx.getTransform();
+          for (const { field, state } of noise) {
+            if (!state.phase || state.scaleX === 0 || state.scaleY === 0) continue;
+            const corners = noiseCorners(field, state, { cx, cy, scale, scaleX });
+            hits.out.push({ kind: 'noise', id: field.id, quad: transformPoints(m, corners) });
+          }
+        }
       }
       notePass = 2;
     }
@@ -624,10 +668,10 @@ function drawNote(
   radius: number,
   highlight: boolean,
   cull?: NoteCull,
-) {
+): [number, number, number, number] | null {
   const n = noteState(entry, line, t);
-  if (n.alpha <= 0 || n.size === 0) return;
-  if (Math.abs(n.y) > radius && Math.abs(n.tail) > radius) return;
+  if (n.alpha <= 0 || n.size === 0) return null;
+  if (Math.abs(n.y) > radius && Math.abs(n.tail) > radius) return null;
   const width = NOTE_WIDTH * scale * n.size;
   const x = n.x * scaleX;
   const head = -n.y * scale;
@@ -635,9 +679,10 @@ function drawNote(
   if (cull) {
     const { bounds, m } = cull;
     const pad = Math.abs(width);
-    if (x + pad / 2 < bounds.x0 || x - pad / 2 > bounds.x1) return;
-    if (Math.max(head, tail) + pad < bounds.y0 || Math.min(head, tail) - pad > bounds.y1) return;
-    if (cull.faint && (n.alpha < FAINT_ALPHA || pad * Math.hypot(m.a, m.b) < 1)) return;
+    if (x + pad / 2 < bounds.x0 || x - pad / 2 > bounds.x1) return null;
+    if (Math.max(head, tail) + pad < bounds.y0 || Math.min(head, tail) - pad > bounds.y1)
+      return null;
+    if (cull.faint && (n.alpha < FAINT_ALPHA || pad * Math.hypot(m.a, m.b) < 1)) return null;
     if (cull.stacked) {
       // Device position, width, orientation and texture; alpha is ignored.
       const key = [
@@ -652,25 +697,28 @@ function drawNote(
         Math.round(m.a * 100),
         Math.round(m.b * 100),
       ].join('|');
-      if (cull.stacked.has(key)) return;
+      if (cull.stacked.has(key)) return null;
       cull.stacked.add(key);
     }
   }
   ctx.globalAlpha = Math.min(1, n.alpha);
 
+  let rect: [number, number, number, number] | null = null;
   if (entry.note.type === 'hold') {
     drawHold(ctx, x, head, tail, width, highlight, n.showHead, cull?.seams ?? true);
+    rect = [x - width / 2, Math.min(head, tail), width, Math.abs(tail - head)];
   } else if (n.showHead) {
     const img = headImage(entry.note.type, highlight);
-    if (img) {
-      const h = Math.max(5, (width * img.naturalHeight) / img.naturalWidth);
-      ctx.drawImage(img, x - width / 2, head - h / 2, width, h);
-    } else {
+    const h = img ? Math.max(5, (width * img.naturalHeight) / img.naturalWidth) : 4;
+    if (img) ctx.drawImage(img, x - width / 2, head - h / 2, width, h);
+    else {
       ctx.fillStyle = FALLBACK_COLORS[entry.note.type];
-      ctx.fillRect(x - width / 2, head - 2, width, 4);
+      ctx.fillRect(x - width / 2, head - h / 2, width, h);
     }
+    rect = [x - width / 2, head - h / 2, width, h];
   }
   ctx.globalAlpha = 1;
+  return rect;
 }
 
 function drawHold(

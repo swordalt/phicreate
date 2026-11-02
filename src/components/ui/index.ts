@@ -9,3 +9,4 @@ export * from './icons';
 export { Slider } from './Slider/Slider';
 export { Segmented } from './Segmented/Segmented';
 export { NumberField } from './NumberField/NumberField';
+export { ContextMenu, type ContextMenuItem } from './ContextMenu/ContextMenu';

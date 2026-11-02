@@ -7,6 +7,8 @@ export type HitEffects = 'always' | 'preview' | 'never';
 export type FrameCap = 'display' | 'uncapped' | 'custom';
 // Preview resolution, % of device pixels.
 export type RenderScale = '100' | '75' | '50';
+// Object types pickable by hovering the preview.
+export type PreviewSelectType = 'line' | 'note' | 'text' | 'ui' | 'media' | 'noise';
 
 export const MIN_CUSTOM_FPS = 1;
 export const MAX_CUSTOM_FPS = 1000;
@@ -29,6 +31,8 @@ export interface Settings {
   eventCurves: boolean;
   selectMode: SelectMode;
   bearingMarker: boolean;
+  previewSelect: boolean;
+  previewSelectTypes: PreviewSelectType[];
   // Preview
   noiseQuality: NoiseQuality;
   backgroundBlur: boolean;
@@ -60,6 +64,8 @@ export const DEFAULT_SETTINGS: Settings = {
   eventCurves: true,
   selectMode: 'box',
   bearingMarker: false,
+  previewSelect: true,
+  previewSelectTypes: ['line', 'note'],
   noiseQuality: 'simplified',
   backgroundBlur: true,
   renderOptimization: false,

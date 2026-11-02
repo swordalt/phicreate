@@ -27,6 +27,7 @@ import {
   type JudgeStatus,
   type Language,
   type NoiseQuality,
+  type PreviewSelectType,
   type RenderScale,
   type SelectMode,
   type Settings,
@@ -68,6 +69,15 @@ const FRAME_CAP_OPTIONS: { value: FrameCap; label: string }[] = [
 const SELECT_OPTIONS: { value: SelectMode; label: string }[] = [
   { value: 'box', label: 'Box' },
   { value: 'line', label: 'Line' },
+];
+
+const PREVIEW_SELECT_TYPES: { value: PreviewSelectType; label: string }[] = [
+  { value: 'line', label: 'Judge lines' },
+  { value: 'note', label: 'Notes' },
+  { value: 'ui', label: 'UI elements' },
+  { value: 'text', label: 'Text' },
+  { value: 'media', label: 'Media' },
+  { value: 'noise', label: 'Noise fields' },
 ];
 
 const NOISE_OPTIONS: { value: NoiseQuality; label: string }[] = [
@@ -255,28 +265,56 @@ function AudioTab({ settings, update }: { settings: Settings; update: Update }) 
 }
 
 function EditingTab({ settings, update }: { settings: Settings; update: Update }) {
+  const toggleType = (type: PreviewSelectType, on: boolean) =>
+    update({
+      previewSelectTypes: on
+        ? [...settings.previewSelectTypes, type]
+        : settings.previewSelectTypes.filter((t) => t !== type),
+    });
   return (
-    <Section title="Grid">
-      <Toggle
-        label="Event trajectory curves"
-        hint="Draw each event's easing curve in the event grid."
-        checked={settings.eventCurves}
-        onChange={(eventCurves) => update({ eventCurves })}
-      />
-      <Segmented
-        label="Multi-select"
-        hint="Drag a box, or draw a line through notes and events."
-        value={settings.selectMode}
-        options={SELECT_OPTIONS}
-        onChange={(selectMode) => update({ selectMode })}
-      />
-      <Toggle
-        label="Bearing marker"
-        hint="Mark the selected object's origin, pointing up along its rotation."
-        checked={settings.bearingMarker}
-        onChange={(bearingMarker) => update({ bearingMarker })}
-      />
-    </Section>
+    <>
+      <Section title="Grid">
+        <Toggle
+          label="Event trajectory curves"
+          hint="Draw each event's easing curve in the event grid."
+          checked={settings.eventCurves}
+          onChange={(eventCurves) => update({ eventCurves })}
+        />
+        <Segmented
+          label="Multi-select"
+          hint="Drag a box, or draw a line through notes and events."
+          value={settings.selectMode}
+          options={SELECT_OPTIONS}
+          onChange={(selectMode) => update({ selectMode })}
+        />
+        <Toggle
+          label="Bearing marker"
+          hint="Mark the selected object's origin, pointing up along its rotation."
+          checked={settings.bearingMarker}
+          onChange={(bearingMarker) => update({ bearingMarker })}
+        />
+      </Section>
+      <Section title="Preview">
+        <Toggle
+          label="Hover to select"
+          hint="Outline the object under the cursor in the gameplay preview; click to select it. Right-click lists every object under the cursor."
+          checked={settings.previewSelect}
+          onChange={(previewSelect) => update({ previewSelect })}
+        />
+        {settings.previewSelect && (
+          <div className={styles.subrows}>
+            {PREVIEW_SELECT_TYPES.map(({ value, label }) => (
+              <Toggle
+                key={value}
+                label={label}
+                checked={settings.previewSelectTypes.includes(value)}
+                onChange={(on) => toggleType(value, on)}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
+    </>
   );
 }
 

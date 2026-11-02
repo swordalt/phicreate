@@ -23,7 +23,7 @@ export interface NoiseViewport {
 }
 
 // Corners in screen space; positions stretch like lines (x by scaleX, y by scale).
-function corners(field: NoiseField, s: NoiseState, vp: NoiseViewport): Point[] {
+export function noiseCorners(field: NoiseField, s: NoiseState, vp: NoiseViewport): Point[] {
   const hw = (field.size[0] * s.scaleX) / 2;
   const hh = (field.size[1] * s.scaleY) / 2;
   // Positive rotation is clockwise on screen.
@@ -55,7 +55,7 @@ function addQuad(
   s: NoiseState,
   vp: NoiseViewport,
 ) {
-  const points = corners(field, s, vp);
+  const points = noiseCorners(field, s, vp);
   if (s.scaleX * s.scaleY < 0) points.reverse();
   ctx.moveTo(points[0][0], points[0][1]);
   for (let i = 1; i < 4; i++) ctx.lineTo(points[i][0], points[i][1]);
@@ -119,7 +119,7 @@ function tint(
   for (const g of [grow, 0]) {
     for (const { field, state } of order) {
       dst.fillStyle = shade(state.color);
-      quad(dst, g ? expand(corners(field, state, vp), g) : corners(field, state, vp));
+      quad(dst, g ? expand(noiseCorners(field, state, vp), g) : noiseCorners(field, state, vp));
       dst.fill();
     }
   }
@@ -170,7 +170,7 @@ function bounds(
   let y1 = -Infinity;
   for (const g of groups) {
     for (const { field, state } of [...g.normal, ...g.subtract]) {
-      for (const [px, py] of corners(field, state, vp)) {
+      for (const [px, py] of noiseCorners(field, state, vp)) {
         const dx = m.a * px + m.c * py + m.e;
         const dy = m.b * px + m.d * py + m.f;
         x0 = Math.min(x0, dx);
@@ -201,7 +201,7 @@ function drawOriginal(
   const device = ([x, y]: Point): DevicePoint => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
   const shapes = (list: Shown[]) =>
     list.map(({ field, state }) => ({
-      points: corners(field, state, vp).map(device),
+      points: noiseCorners(field, state, vp).map(device),
       color: state.color,
     }));
   const byPhase = Object.fromEntries(
@@ -296,7 +296,7 @@ export function drawNoiseFields(
 
   // Outline the selected field even while hidden.
   if (selected && selected.state.scaleX !== 0 && selected.state.scaleY !== 0) {
-    const points = corners(selected.field, selected.state, vp);
+    const points = noiseCorners(selected.field, selected.state, vp);
     ctx.save();
     ctx.strokeStyle = SELECTED_COLOR;
     ctx.lineWidth = 1.5;
